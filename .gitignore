@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ChromaDB
+chroma_db/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+xcuserdata/
+*.xcworkspace
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace/
+
+# Build
+build/
+*.dmg
+*.app
+*.xcarchive
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+*.pem

@@ -1,0 +1,90 @@
+// PaperMindMac/Views/SidebarView.swift
+// PaperMind — Barra lateral com documentos indexados
+
+import SwiftUI
+
+struct SidebarView: View {
+    @ObservedObject var api: APIClient
+    @Binding var selectedDocument: DocumentInfo?
+    var onSelect: (DocumentInfo) -> Void
+
+    @State private var documents: [DocumentInfo] = []
+    @State private var searchText = ""
+
+    var filteredDocuments: [DocumentInfo] {
+        if searchText.isEmpty {
+            return documents
+        }
+        return documents.filter {
+            $0.filename.localizedCaseInsensitiveContains(searchText)
+            || $0.documentType.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        List(filteredDocuments, selection: $selectedDocument) { doc in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(doc.filename)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                HStack {
+                    Label(doc.documentType, systemImage: iconFor(doc.documentType))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text("\(doc.totalChunks) chunks")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.vertical, 4)
+            .tag(doc)
+            .onTapGesture {
+                selectedDocument = doc
+                onSelect(doc)
+            }
+        }
+        .searchable(text: $searchText, prompt: "Procurar documentos...")
+        .navigationTitle("Documentos")
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    Task { await refreshDocuments() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+        }
+        .overlay {
+            if documents.isEmpty {
+                ContentUnavailableView(
+                    "Sem documentos",
+                    systemImage: "doc.badge.plus",
+                    description: Text("Arrasta um PDF ou usa ⌘U")
+                )
+            }
+        }
+        .task {
+            await refreshDocuments()
+        }
+    }
+
+    private func refreshDocuments() async {
+        documents = (try? await api.getDocuments()) ?? []
+    }
+
+    private func iconFor(_ type: String) -> String {
+        switch type.lowercased() {
+        case "contrato": return "signature"
+        case "fatura": return "eurosign.circle"
+        case "recibo": return "receipt"
+        case "carta": return "envelope"
+        case "relatorio": return "chart.bar.doc.horizontal"
+        case "identificacao": return "person.text.rectangle"
+        default: return "doc"
+        }
+    }
+}
