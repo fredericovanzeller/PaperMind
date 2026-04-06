@@ -62,6 +62,7 @@ class LocalLLM:
         full_prompt = f"""És um assistente que responde APENAS com base nos documentos.
 Se a resposta não estiver nos documentos, diz-o claramente.
 Responde em português quando a pergunta for em português.
+Sê conciso e não repitas informação. Máximo 3 frases.
 
 Documentos:
 {context}
@@ -71,7 +72,7 @@ Pergunta: {prompt}
 Resposta:"""
 
         return generate(
-            self.model, self.tokenizer, prompt=full_prompt, max_tokens=512
+            self.model, self.tokenizer, prompt=full_prompt, max_tokens=256
         )
 
     def classify(self, text: str) -> str:

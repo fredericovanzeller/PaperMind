@@ -1,4 +1,4 @@
-"""PaperMind — PDF & image text processor with page-aware chunking."""
+"""PaperMind — PDF & image text processor with page-aware chunking + OCR."""
 
 import fitz  # PyMuPDF
 from pathlib import Path
@@ -9,7 +9,7 @@ from .models import DocumentChunk
 def process_pdf(filepath: str) -> List[DocumentChunk]:
     """
     Extrai texto de um PDF e divide em chunks com referência à página.
-    Chunk size: 400 palavras com overlap de 50 para manter contexto.
+    Se uma página não tiver texto (scan), faz OCR.
     """
     doc = fitz.open(filepath)
     filename = Path(filepath).name
@@ -18,6 +18,11 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
 
     for page_num, page in enumerate(doc, start=1):
         text = page.get_text().strip()
+
+        # Se não há texto, tentar OCR (página é provavelmente um scan)
+        if not text:
+            text = ocr_page(page)
+
         if not text:
             continue
 
@@ -27,7 +32,7 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
 
         for i in range(0, len(words), chunk_size - overlap):
             chunk_text = " ".join(words[i:i + chunk_size])
-            if len(chunk_text) > 50:  # ignorar chunks demasiado curtos
+            if len(chunk_text) > 50:
                 chunks.append(DocumentChunk(
                     text=chunk_text,
                     source=filename,
@@ -37,6 +42,26 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
                 chunk_index += 1
 
     return chunks
+
+
+def ocr_page(page) -> str:
+    """Faz OCR de uma página PDF usando pytesseract."""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+
+        # Renderizar página como imagem (300 DPI para boa qualidade OCR)
+        pix = page.get_pixmap(dpi=300)
+        img_data = pix.tobytes("png")
+        image = Image.open(io.BytesIO(img_data))
+
+        # OCR com suporte a português e inglês
+        text = pytesseract.image_to_string(image, lang="por+eng")
+        return text.strip()
+    except Exception as e:
+        print(f"OCR falhou: {e}")
+        return ""
 
 
 def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
@@ -55,7 +80,7 @@ def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
             chunks.append(DocumentChunk(
                 text=chunk_text,
                 source=filename,
-                page_number=1,  # imagem = página 1
+                page_number=1,
                 chunk_index=i,
             ))
 

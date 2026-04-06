@@ -4,7 +4,6 @@ PaperMind — RAG Engine (orquestrador).
 Liga todos os componentes: PDF processor, vector store, hybrid search, LLM.
 """
 
-import shutil
 import time
 from pathlib import Path
 from datetime import datetime
@@ -24,8 +23,8 @@ from .hybrid_search import HybridSearch
 from .llm import LocalLLM
 
 
-# Caminhos iCloud Drive (configuráveis)
-ICLOUD_BASE = Path.home() / "Library/Mobile Documents/iCloud~com~frederico~papermind/Documents"
+# Caminhos locais (configuráveis)
+ICLOUD_BASE = Path.home() / "Developer" / "PaperMind" / "data"
 ICLOUD_INBOX = ICLOUD_BASE / "Inbox"
 ICLOUD_PROCESSED = ICLOUD_BASE / "Processed"
 CHROMA_DIR = str(ICLOUD_BASE / "Database")
@@ -59,12 +58,10 @@ class RAGEngine:
             if path.suffix.lower() == ".pdf":
                 chunks = process_pdf(filepath)
             elif path.suffix.lower() in {".jpg", ".jpeg", ".png", ".heic"}:
-                # Procurar ficheiro .txt com OCR do iPhone
                 txt_path = path.with_suffix(".txt")
                 if txt_path.exists():
                     ocr_text = txt_path.read_text(encoding="utf-8")
                 else:
-                    # TODO: OCR local com Apple Vision (Fase 4)
                     ocr_text = ""
 
                 if not ocr_text.strip():
@@ -85,25 +82,28 @@ class RAGEngine:
 
             if not chunks:
                 return UploadResponse(
-                    status="error",
+                    status="warning",
                     filename=name,
                     total_chunks=0,
-                    error="Nenhum texto extraído do documento",
+                    error="Nenhum texto extraído (documento pode ser um scan)",
                 )
 
-            # Classificar e renomear (v3.0)
-            doc_type = self.llm.classify(chunks[0].text)
-            smart_name = self.llm.suggest_filename(chunks[0].text, doc_type)
+            # Classificar tipo (simples, sem renomear)
+            try:
+                doc_type = self.llm.classify(chunks[0].text)
+                # Limpar resposta do LLM (só queremos uma palavra)
+                for valid in ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]:
+                    if valid in doc_type:
+                        doc_type = valid
+                        break
+                else:
+                    doc_type = "outro"
+            except Exception:
+                doc_type = "outro"
 
-            # Mover para Processed/[tipo]/
-            dest_dir = ICLOUD_PROCESSED / doc_type.capitalize()
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / f"{smart_name}{path.suffix}"
-            shutil.move(filepath, dest)
-
-            # Actualizar source nos chunks
+            # Usar nome original do ficheiro
             for chunk in chunks:
-                chunk.source = dest.name
+                chunk.source = name
 
             # Indexar
             self.vector_store.add_chunks(chunks)
@@ -112,11 +112,11 @@ class RAGEngine:
             # Registar documento
             self.documents.append(
                 DocumentInfo(
-                    filename=dest.name,
+                    filename=name,
                     total_chunks=len(chunks),
                     document_type=doc_type,
                     date_added=datetime.now(),
-                    file_path=str(dest),
+                    file_path=filepath,
                 )
             )
 
@@ -124,7 +124,7 @@ class RAGEngine:
 
             return UploadResponse(
                 status="success",
-                filename=smart_name,
+                filename=name,
                 total_chunks=len(chunks),
                 document_type=doc_type,
             )
@@ -173,7 +173,7 @@ class RAGEngine:
                 filename=c.source,
                 page_number=c.page_number,
                 excerpt=c.text[:150] + "..." if len(c.text) > 150 else c.text,
-                relevance_score=0.0,  # TODO: propagar score real
+                relevance_score=0.0,
             )
             for c in top_chunks
         ]
