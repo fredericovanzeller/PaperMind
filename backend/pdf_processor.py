@@ -6,10 +6,29 @@ from typing import List
 from .models import DocumentChunk
 
 
+def text_quality_score(text: str) -> float:
+    """Avalia a qualidade do texto extraído (0.0 a 1.0)."""
+    if not text.strip():
+        return 0.0
+
+    words = text.split()
+    if not words:
+        return 0.0
+
+    # Contar palavras "reais" (mais de 2 caracteres, maioria letras)
+    good_words = 0
+    for w in words:
+        clean = w.strip(".,;:!?()[]{}\"'")
+        if len(clean) >= 2 and sum(c.isalpha() for c in clean) > len(clean) * 0.5:
+            good_words += 1
+
+    return good_words / len(words)
+
+
 def process_pdf(filepath: str) -> List[DocumentChunk]:
     """
     Extrai texto de um PDF e divide em chunks com referência à página.
-    Se uma página não tiver texto (scan), faz OCR.
+    Se o texto extraído for de má qualidade ou inexistente, faz OCR.
     """
     doc = fitz.open(filepath)
     filename = Path(filepath).name
@@ -19,11 +38,17 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
     for page_num, page in enumerate(doc, start=1):
         text = page.get_text().strip()
 
-        # Se não há texto, tentar OCR (página é provavelmente um scan)
-        if not text:
-            text = ocr_page(page)
+        # Avaliar qualidade do texto extraído
+        quality = text_quality_score(text)
 
-        if not text:
+        # Se qualidade baixa (< 0.4) ou sem texto, tentar OCR
+        if quality < 0.4 or not text:
+            ocr_text = ocr_page(page)
+            # Usar OCR se for melhor que o texto original
+            if text_quality_score(ocr_text) > quality:
+                text = ocr_text
+
+        if not text or len(text.strip()) < 20:
             continue
 
         words = text.split()
@@ -51,12 +76,10 @@ def ocr_page(page) -> str:
         from PIL import Image
         import io
 
-        # Renderizar página como imagem (300 DPI para boa qualidade OCR)
         pix = page.get_pixmap(dpi=300)
         img_data = pix.tobytes("png")
         image = Image.open(io.BytesIO(img_data))
 
-        # OCR com suporte a português e inglês
         text = pytesseract.image_to_string(image, lang="por+eng")
         return text.strip()
     except Exception as e:
@@ -67,7 +90,6 @@ def ocr_page(page) -> str:
 def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
     """
     Para imagens já com OCR feito pelo iPhone.
-    Recebe texto extraído e divide em chunks.
     """
     words = text.split()
     chunks = []

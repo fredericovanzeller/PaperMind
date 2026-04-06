@@ -91,7 +91,6 @@ class RAGEngine:
             # Classificar tipo (simples, sem renomear)
             try:
                 doc_type = self.llm.classify(chunks[0].text)
-                # Limpar resposta do LLM (só queremos uma palavra)
                 for valid in ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]:
                     if valid in doc_type:
                         doc_type = valid
@@ -167,16 +166,21 @@ class RAGEngine:
         # 4. Gerar resposta com LLM
         answer = self.llm.ask(question, context)
 
-        # 5. Construir sources
-        sources = [
-            Source(
-                filename=c.source,
-                page_number=c.page_number,
-                excerpt=c.text[:150] + "..." if len(c.text) > 150 else c.text,
-                relevance_score=0.0,
-            )
-            for c in top_chunks
-        ]
+        # 5. Construir sources (sem duplicados)
+        seen = set()
+        sources = []
+        for c in top_chunks:
+            key = f"{c.source}_p{c.page_number}_c{c.chunk_index}"
+            if key not in seen:
+                seen.add(key)
+                sources.append(
+                    Source(
+                        filename=c.source,
+                        page_number=c.page_number,
+                        excerpt=c.text[:150] + "..." if len(c.text) > 150 else c.text,
+                        relevance_score=0.0,
+                    )
+                )
 
         elapsed_ms = int((time.time() - start) * 1000)
 

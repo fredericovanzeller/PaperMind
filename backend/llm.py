@@ -9,6 +9,24 @@ import threading
 from mlx_lm import load, generate
 
 
+def trim_repetition(text: str) -> str:
+    """Remove texto repetido da resposta do LLM."""
+    sentences = text.split(". ")
+    if len(sentences) <= 2:
+        return text
+
+    seen = set()
+    unique = []
+    for s in sentences:
+        # Normalizar para comparação
+        normalized = s.strip().lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique.append(s)
+
+    return ". ".join(unique)
+
+
 class LocalLLM:
     def __init__(
         self,
@@ -59,33 +77,35 @@ class LocalLLM:
             self.load()
         self._reset_timer()
 
-        full_prompt = f"""És um assistente que responde APENAS com base nos documentos.
-Se a resposta não estiver nos documentos, diz-o claramente.
-Responde em português quando a pergunta for em português.
-Sê conciso e não repitas informação. Máximo 3 frases.
-
+        full_prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+És um assistente que responde APENAS com base nos documentos fornecidos.
+Se a resposta não estiver nos documentos, diz "Não encontrei essa informação nos documentos."
+Responde em português. Sê conciso: máximo 3 frases.
+Não repitas frases.<|eot_id|><|start_header_id|>user<|end_header_id|>
 Documentos:
 {context}
 
-Pergunta: {prompt}
+Pergunta: {prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
 
-Resposta:"""
-
-        return generate(
-            self.model, self.tokenizer, prompt=full_prompt, max_tokens=256
+        raw = generate(
+            self.model, self.tokenizer, prompt=full_prompt, max_tokens=200
         )
+        return trim_repetition(raw)
 
     def classify(self, text: str) -> str:
         """Classifica o tipo de documento."""
         if not self.is_loaded:
             self.load()
 
-        prompt = f"""Classifica. Responde APENAS com uma palavra:
-contrato | fatura | recibo | carta | relatorio | identificacao | outro
+        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+Classifica o documento. Responde APENAS com uma palavra.<|eot_id|><|start_header_id|>user<|end_header_id|>
+Opções: contrato | fatura | recibo | carta | relatorio | identificacao | outro
 
 Texto: {text[:300]}
 
-Tipo:"""
+Tipo:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
 
         result = generate(
             self.model, self.tokenizer, prompt=prompt, max_tokens=10
@@ -97,14 +117,14 @@ Tipo:"""
         if not self.is_loaded:
             self.load()
 
-        prompt = f"""Sugere um nome de ficheiro para este documento.
-Formato: Tipo_Entidade_Data (ex: Fatura_EDP_Marco2026)
-Sem espaços, sem acentos, sem extensão.
-
-Tipo do documento: {doc_type}
+        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+Sugere um nome de ficheiro. Formato: Tipo_Entidade_Data (ex: Fatura_EDP_Marco2026)
+Sem espaços, sem acentos, sem extensão. Responde APENAS com o nome.<|eot_id|><|start_header_id|>user<|end_header_id|>
+Tipo: {doc_type}
 Texto: {text[:200]}
 
-Nome:"""
+Nome:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
 
         result = generate(
             self.model, self.tokenizer, prompt=prompt, max_tokens=20
