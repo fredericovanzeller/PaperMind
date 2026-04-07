@@ -7,7 +7,7 @@ Liga todos os componentes: PDF processor, vector store, hybrid search, LLM.
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from .models import (
     AskResponse,
@@ -38,11 +38,37 @@ class RAGEngine:
         self.documents: List[DocumentInfo] = []
         self._last_sync: Optional[datetime] = None
 
-        # Reconstruir índice BM25 a partir do ChromaDB existente
+        # Reconstruir índice BM25 e lista de documentos a partir do ChromaDB
         existing_chunks = self.vector_store.get_all_chunks()
         if existing_chunks:
             self.hybrid_search.build_index(existing_chunks)
-            print(f"Índice BM25 reconstruído com {len(existing_chunks)} chunks")
+            self._rebuild_document_list(existing_chunks)
+            print(f"Índice reconstruído: {len(existing_chunks)} chunks, {len(self.documents)} documentos")
+
+    def _rebuild_document_list(self, chunks: List[DocumentChunk]):
+        """Reconstrói a lista de documentos a partir dos chunks no ChromaDB."""
+        doc_map: dict = {}
+        for chunk in chunks:
+            if chunk.source not in doc_map:
+                doc_map[chunk.source] = {
+                    "filename": chunk.source,
+                    "total_chunks": 0,
+                    "pages": set(),
+                }
+            doc_map[chunk.source]["total_chunks"] += 1
+            doc_map[chunk.source]["pages"].add(chunk.page_number)
+
+        self.documents = []
+        for name, info in doc_map.items():
+            self.documents.append(
+                DocumentInfo(
+                    filename=info["filename"],
+                    total_chunks=info["total_chunks"],
+                    document_type="documento",
+                    date_added=datetime.now(),
+                    file_path="",
+                )
+            )
 
     def ingest_file(
         self, filepath: str, original_name: Optional[str] = None
@@ -104,6 +130,9 @@ class RAGEngine:
             self.vector_store.add_chunks(chunks)
             self.hybrid_search.add_chunks(chunks)
 
+            # Remover entrada antiga se existir (re-upload do mesmo ficheiro)
+            self.documents = [d for d in self.documents if d.filename != name]
+
             self.documents.append(
                 DocumentInfo(
                     filename=name,
@@ -135,11 +164,9 @@ class RAGEngine:
         self, chunks: List[DocumentChunk], question: str
     ) -> List[DocumentChunk]:
         """Re-ordena chunks por relevância directa à pergunta."""
-        # Só considerar palavras significativas (>3 chars)
         question_words = [
             w.lower() for w in question.split() if len(w) > 3
         ]
-        # Manter também palavras em maiúsculas (nomes próprios) independente do tamanho
         for w in question.split():
             if len(w) > 0 and w[0].isupper() and w.lower() not in question_words:
                 question_words.append(w.lower())
@@ -147,7 +174,6 @@ class RAGEngine:
         scored = []
         for chunk in chunks:
             chunk_lower = chunk.text.lower()
-            # Contar palavras da pergunta que aparecem no chunk
             matches = sum(1 for w in question_words if w in chunk_lower)
             scored.append((matches, chunk))
 
@@ -176,21 +202,19 @@ class RAGEngine:
                 processing_time_ms=int((time.time() - start) * 1000),
             )
 
-        # 3. Re-rank: priorizar chunks que contêm palavras da pergunta
+        # 3. Re-rank
         top_chunks = self._rerank_chunks(top_chunks, question)
-
-        # 4. Limitar a 4 chunks mais relevantes (menos ruído para o LLM)
         top_chunks = top_chunks[:4]
 
-        # 5. Montar contexto
+        # 4. Montar contexto
         context = "\n\n".join(
             f"[{c.source}, p.{c.page_number}]: {c.text}" for c in top_chunks
         )
 
-        # 6. Gerar resposta com LLM
+        # 5. Gerar resposta com LLM
         answer = self.llm.ask(question, context)
 
-        # 7. Construir sources (sem duplicados)
+        # 6. Construir sources (sem duplicados)
         seen = set()
         sources = []
         for c in top_chunks:
