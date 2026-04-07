@@ -1,4 +1,4 @@
-"""PaperMind — ChromaDB vector store with Ollama embeddings."""
+"""PaperMind — ChromaDB vector store com metadata de tipo."""
 
 import chromadb
 from typing import List, Tuple, Optional
@@ -8,10 +8,6 @@ from .models import DocumentChunk
 
 class VectorStore:
     def __init__(self, persist_dir: str = "./chroma_db"):
-        """
-        Inicializa ChromaDB com persistência em disco.
-        Usa Ollama nomic-embed-text para embeddings.
-        """
         self.persist_dir = persist_dir
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
 
@@ -21,8 +17,8 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def add_chunks(self, chunks: List[DocumentChunk]):
-        """Adiciona chunks ao ChromaDB com embeddings gerados pelo Ollama."""
+    def add_chunks(self, chunks: List[DocumentChunk], doc_type: str = "documento"):
+        """Adiciona chunks ao ChromaDB com metadata incluindo tipo."""
         if not chunks:
             return
 
@@ -33,12 +29,11 @@ class VectorStore:
                 "source": c.source,
                 "page_number": c.page_number,
                 "chunk_index": c.chunk_index,
+                "doc_type": doc_type,
             }
             for c in chunks
         ]
 
-        # ChromaDB gera embeddings automaticamente com o modelo default
-        # Para usar Ollama, configuramos o embedding function
         self.collection.upsert(
             ids=ids,
             documents=documents,
@@ -48,10 +43,7 @@ class VectorStore:
     def search(
         self, query: str, n_results: int = 5
     ) -> List[Tuple[str, float]]:
-        """
-        Pesquisa semântica no ChromaDB.
-        Retorna lista de (texto, score de relevância).
-        """
+        """Pesquisa semântica no ChromaDB."""
         results = self.collection.query(
             query_texts=[query],
             n_results=min(n_results, self.collection.count() or 1),
@@ -62,8 +54,6 @@ class VectorStore:
             for doc, dist in zip(
                 results["documents"][0], results["distances"][0]
             ):
-                # ChromaDB cosine distance: 0 = idêntico, 2 = oposto
-                # Converter para score de similaridade: 1 - (dist/2)
                 score = 1.0 - (dist / 2.0)
                 pairs.append((doc, score))
 
@@ -88,6 +78,21 @@ class VectorStore:
                 )
             )
         return chunks
+
+    def get_doc_types(self) -> dict:
+        """Recupera o tipo de cada documento armazenado."""
+        if self.collection.count() == 0:
+            return {}
+
+        results = self.collection.get()
+        doc_types = {}
+        for meta in results["metadatas"] or []:
+            source = meta["source"]
+            doc_type = meta.get("doc_type", "documento")
+            if source not in doc_types:
+                doc_types[source] = doc_type
+
+        return doc_types
 
     def delete_document(self, filename: str):
         """Remove todos os chunks de um documento."""

@@ -1,7 +1,5 @@
 """
 PaperMind — RAG Engine (orquestrador).
-
-Liga todos os componentes: PDF processor, vector store, hybrid search, LLM.
 """
 
 import re
@@ -24,7 +22,6 @@ from .hybrid_search import HybridSearch
 from .llm import LocalLLM
 
 
-# Caminhos locais (configuráveis)
 ICLOUD_BASE = Path.home() / "Developer" / "PaperMind" / "data"
 ICLOUD_INBOX = ICLOUD_BASE / "Inbox"
 ICLOUD_PROCESSED = ICLOUD_BASE / "Processed"
@@ -32,7 +29,6 @@ CHROMA_DIR = str(ICLOUD_BASE / "Database")
 
 
 def clean_query(query: str) -> str:
-    """Remove pontuação da query para busca limpa."""
     return re.sub(r'[^\w\s]', '', query)
 
 
@@ -53,23 +49,22 @@ class RAGEngine:
             print(f"Índice reconstruído: {len(existing_chunks)} chunks, {len(self.documents)} documentos")
 
     def _rebuild_document_list(self, chunks: List[DocumentChunk]):
-        """Reconstrói a lista de documentos a partir dos chunks no ChromaDB."""
+        """Reconstrói a lista de documentos com tipos persistidos no ChromaDB."""
+        doc_types = self.vector_store.get_doc_types()
+
         doc_map: dict = {}
         for chunk in chunks:
             if chunk.source not in doc_map:
-                doc_map[chunk.source] = {
-                    "filename": chunk.source,
-                    "total_chunks": 0,
-                }
-            doc_map[chunk.source]["total_chunks"] += 1
+                doc_map[chunk.source] = 0
+            doc_map[chunk.source] += 1
 
         self.documents = []
-        for name, info in doc_map.items():
+        for name, count in doc_map.items():
             self.documents.append(
                 DocumentInfo(
-                    filename=info["filename"],
-                    total_chunks=info["total_chunks"],
-                    document_type="documento",
+                    filename=name,
+                    total_chunks=count,
+                    document_type=doc_types.get(name, "documento"),
                     date_added=datetime.now(),
                     file_path="",
                 )
@@ -82,20 +77,15 @@ class RAGEngine:
         if not query_words or not self._all_chunks:
             return []
 
-        # Encontrar frequência de cada palavra da query nos chunks
         total = len(self._all_chunks)
         word_freq = {}
         for w in query_words:
             word_freq[w] = sum(1 for c in self._all_chunks if w in c.text.lower())
 
-        # Ordenar palavras por raridade (menos frequente primeiro)
         rare_words = sorted(query_words, key=lambda w: word_freq.get(w, total))
-
-        # Primeiro: chunks que contêm a palavra mais rara
         rarest = rare_words[0]
         priority_chunks = [c for c in self._all_chunks if rarest in c.text.lower()]
 
-        # Se encontrou chunks com a palavra rara, usar esses
         if priority_chunks:
             scored = []
             for chunk in priority_chunks:
@@ -105,7 +95,6 @@ class RAGEngine:
             scored.sort(key=lambda x: x[0], reverse=True)
             return [chunk for _, chunk in scored[:n_results]]
 
-        # Fallback: busca normal por contagem de matches
         scored = []
         for chunk in self._all_chunks:
             chunk_lower = chunk.text.lower()
@@ -119,7 +108,6 @@ class RAGEngine:
     def ingest_file(
         self, filepath: str, original_name: Optional[str] = None
     ) -> UploadResponse:
-        """Processa um ficheiro e indexa-o."""
         path = Path(filepath)
         name = original_name or path.name
 
@@ -157,6 +145,7 @@ class RAGEngine:
                     error="Nenhum texto extraído (documento pode ser um scan)",
                 )
 
+            # Classificar tipo
             try:
                 doc_type = self.llm.classify(chunks[0].text)
                 for valid in ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]:
@@ -171,7 +160,8 @@ class RAGEngine:
             for chunk in chunks:
                 chunk.source = name
 
-            self.vector_store.add_chunks(chunks)
+            # Guardar com tipo no metadata
+            self.vector_store.add_chunks(chunks, doc_type=doc_type)
             self.hybrid_search.add_chunks(chunks)
             self._all_chunks.extend(chunks)
 
@@ -205,23 +195,18 @@ class RAGEngine:
             )
 
     def ask(self, question: str) -> AskResponse:
-        """Responde a uma pergunta usando busca por texto + RAG híbrido."""
         start = time.time()
 
-        # 1. Busca directa por texto (prioriza palavras raras como nomes)
         text_chunks = self._text_search(question, n_results=5)
 
-        # 2. Pesquisa semântica no ChromaDB
         semantic_results = self.vector_store.search(question, n_results=15)
 
-        # 3. Pesquisa híbrida (BM25 + semântica)
         hybrid_chunks = self.hybrid_search.search(
             query=question,
             n_results=10,
             semantic_results=semantic_results,
         )
 
-        # 4. Combinar: text search primeiro (mais preciso para nomes)
         combined = []
         seen_keys = set()
 
@@ -247,15 +232,12 @@ class RAGEngine:
                 processing_time_ms=int((time.time() - start) * 1000),
             )
 
-        # 5. Montar contexto
         context = "\n\n".join(
             f"[{c.source}, p.{c.page_number}]: {c.text}" for c in combined
         )
 
-        # 6. Gerar resposta com LLM
         answer = self.llm.ask(question, context)
 
-        # 7. Construir sources (sem duplicados)
         seen = set()
         sources = []
         for c in combined:
@@ -281,28 +263,22 @@ class RAGEngine:
         )
 
     def process_inbox(self) -> List[str]:
-        """Processa todos os ficheiros na Inbox."""
         ICLOUD_INBOX.mkdir(parents=True, exist_ok=True)
         processed = []
-
         for f in sorted(ICLOUD_INBOX.iterdir()):
             if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic"}:
                 result = self.ingest_file(str(f), original_name=f.name)
                 if result.status == "success":
                     processed.append(result.filename)
-
         return processed
 
     def list_documents(self) -> List[dict]:
-        """Lista todos os documentos indexados."""
         return [doc.model_dump() for doc in self.documents]
 
     def get_sync_status(self) -> SyncStatus:
-        """Estado de sincronização para o iPhone consultar."""
         ICLOUD_INBOX.mkdir(parents=True, exist_ok=True)
         inbox_files = [
-            f
-            for f in ICLOUD_INBOX.iterdir()
+            f for f in ICLOUD_INBOX.iterdir()
             if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic"}
         ]
         return SyncStatus(
