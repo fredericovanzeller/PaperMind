@@ -1,12 +1,11 @@
 """
-PaperMind — Local LLM via MLX with auto-off.
+PaperMind — Local LLM via Ollama with auto-off.
 
-Carrega o modelo em RAM apenas quando necessário.
-Descarrega automaticamente após X minutos de inatividade.
+Usa Ollama para correr o modelo localmente.
 """
 
+import requests
 import threading
-from mlx_lm import load, generate
 
 
 def trim_repetition(text: str) -> str:
@@ -18,7 +17,6 @@ def trim_repetition(text: str) -> str:
     seen = set()
     unique = []
     for s in sentences:
-        # Normalizar para comparação
         normalized = s.strip().lower()
         if normalized and normalized not in seen:
             seen.add(normalized)
@@ -30,103 +28,100 @@ def trim_repetition(text: str) -> str:
 class LocalLLM:
     def __init__(
         self,
-        model_name: str = "mlx-community/Llama-3.2-3B-Instruct-4bit",
-        auto_off_minutes: int = 5,
+        model_name: str = "gemma4:e4b",
+        ollama_url: str = "http://localhost:11434",
+        auto_off_minutes: int = 10,
     ):
         self.model_name = model_name
-        self.model = None
-        self.tokenizer = None
-        self.is_loaded = False
+        self.ollama_url = ollama_url
+        self.is_loaded = True  # Ollama gere o modelo
         self.auto_off_minutes = auto_off_minutes
         self._timer = None
-        self.load()
+        print(f"LLM configurado: {self.model_name} via Ollama")
 
     def load(self):
-        """Carrega modelo e tokenizer em RAM."""
-        if not self.is_loaded:
-            print(f"A carregar {self.model_name}...")
-            self.model, self.tokenizer = load(self.model_name)
+        """Pré-carrega o modelo no Ollama."""
+        try:
+            requests.post(
+                f"{self.ollama_url}/api/generate",
+                json={"model": self.model_name, "prompt": "ok", "stream": False},
+                timeout=120,
+            )
             self.is_loaded = True
-            self._reset_timer()
+            print(f"Modelo {self.model_name} carregado.")
+        except Exception as e:
+            print(f"Erro ao carregar modelo: {e}")
 
     def unload(self):
-        """Liberta RAM descarregando o modelo."""
-        if self.is_loaded:
-            del self.model
-            del self.tokenizer
-            self.model = None
-            self.tokenizer = None
+        """Descarrega o modelo do Ollama."""
+        try:
+            requests.post(
+                f"{self.ollama_url}/api/generate",
+                json={"model": self.model_name, "keep_alive": 0},
+                timeout=10,
+            )
             self.is_loaded = False
-            if self._timer:
-                self._timer.cancel()
             print("Modelo descarregado. RAM libertada.")
+        except Exception:
+            pass
 
-    def _reset_timer(self):
-        """Reinicia o temporizador de auto-off."""
-        if self._timer:
-            self._timer.cancel()
-        self._timer = threading.Timer(
-            self.auto_off_minutes * 60, self.unload
-        )
-        self._timer.daemon = True
-        self._timer.start()
+    def _call_ollama(self, prompt: str, system: str = "", max_tokens: int = 500) -> str:
+        """Chama o Ollama API."""
+        try:
+            response = requests.post(
+                f"{self.ollama_url}/api/generate",
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "system": system,
+                    "stream": False,
+                    "options": {
+                        "num_predict": max_tokens,
+                    },
+                },
+                timeout=300,
+            )
+            result = response.json()
+            return result.get("response", "").strip()
+        except Exception as e:
+            print(f"Erro Ollama: {e}")
+            return "Erro ao gerar resposta. Verifica que o Ollama está a correr."
 
     def ask(self, prompt: str, context: str = "") -> str:
         """Responde a uma pergunta com base no contexto dos documentos."""
-        if not self.is_loaded:
-            self.load()
-        self._reset_timer()
-
-        full_prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-És um assistente que responde APENAS com base nos documentos fornecidos.
+        system = """És um assistente documental especializado. Responde APENAS com base nos documentos fornecidos.
+Extrai informação exacta dos documentos: nomes, datas, valores, números, moradas, cláusulas.
+Cita o texto relevante quando possível.
 Se a resposta não estiver nos documentos, diz "Não encontrei essa informação nos documentos."
-Responde em português. Sê conciso: máximo 3 frases.
-Não repitas frases.<|eot_id|><|start_header_id|>user<|end_header_id|>
-Documentos:
+Responde em português. Sê completo mas não repitas informação."""
+
+        user_prompt = f"""Documentos:
 {context}
 
-Pergunta: {prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-"""
+Pergunta: {prompt}"""
 
-        raw = generate(
-            self.model, self.tokenizer, prompt=full_prompt, max_tokens=200
-        )
+        raw = self._call_ollama(user_prompt, system=system, max_tokens=500)
         return trim_repetition(raw)
 
     def classify(self, text: str) -> str:
         """Classifica o tipo de documento."""
-        if not self.is_loaded:
-            self.load()
-
-        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Classifica o documento. Responde APENAS com uma palavra.<|eot_id|><|start_header_id|>user<|end_header_id|>
-Opções: contrato | fatura | recibo | carta | relatorio | identificacao | outro
+        system = "Classifica o documento. Responde APENAS com uma palavra."
+        prompt = f"""Opções: contrato | fatura | recibo | carta | relatorio | identificacao | outro
 
 Texto: {text[:300]}
 
-Tipo:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-"""
+Tipo:"""
 
-        result = generate(
-            self.model, self.tokenizer, prompt=prompt, max_tokens=10
-        )
+        result = self._call_ollama(prompt, system=system, max_tokens=10)
         return result.strip().lower()
 
     def suggest_filename(self, text: str, doc_type: str) -> str:
         """v3.0 — Sugere nome inteligente para o ficheiro."""
-        if not self.is_loaded:
-            self.load()
-
-        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Sugere um nome de ficheiro. Formato: Tipo_Entidade_Data (ex: Fatura_EDP_Marco2026)
-Sem espaços, sem acentos, sem extensão. Responde APENAS com o nome.<|eot_id|><|start_header_id|>user<|end_header_id|>
-Tipo: {doc_type}
+        system = "Sugere um nome de ficheiro. Formato: Tipo_Entidade_Data (ex: Fatura_EDP_Marco2026). Sem espaços, sem acentos, sem extensão. Responde APENAS com o nome."
+        prompt = f"""Tipo: {doc_type}
 Texto: {text[:200]}
 
-Nome:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-"""
+Nome:"""
 
-        result = generate(
-            self.model, self.tokenizer, prompt=prompt, max_tokens=20
-        )
+        result = self._call_ollama(prompt, system=system, max_tokens=20)
         return result.strip()

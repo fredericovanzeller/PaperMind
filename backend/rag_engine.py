@@ -54,7 +54,6 @@ class RAGEngine:
         name = original_name or path.name
 
         try:
-            # Processar conforme o tipo
             if path.suffix.lower() == ".pdf":
                 chunks = process_pdf(filepath)
             elif path.suffix.lower() in {".jpg", ".jpeg", ".png", ".heic"}:
@@ -88,7 +87,6 @@ class RAGEngine:
                     error="Nenhum texto extraído (documento pode ser um scan)",
                 )
 
-            # Classificar tipo (simples, sem renomear)
             try:
                 doc_type = self.llm.classify(chunks[0].text)
                 for valid in ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]:
@@ -100,15 +98,12 @@ class RAGEngine:
             except Exception:
                 doc_type = "outro"
 
-            # Usar nome original do ficheiro
             for chunk in chunks:
                 chunk.source = name
 
-            # Indexar
             self.vector_store.add_chunks(chunks)
             self.hybrid_search.add_chunks(chunks)
 
-            # Registar documento
             self.documents.append(
                 DocumentInfo(
                     filename=name,
@@ -136,17 +131,40 @@ class RAGEngine:
                 error=str(e),
             )
 
+    def _rerank_chunks(
+        self, chunks: List[DocumentChunk], question: str
+    ) -> List[DocumentChunk]:
+        """Re-ordena chunks por relevância directa à pergunta."""
+        # Só considerar palavras significativas (>3 chars)
+        question_words = [
+            w.lower() for w in question.split() if len(w) > 3
+        ]
+        # Manter também palavras em maiúsculas (nomes próprios) independente do tamanho
+        for w in question.split():
+            if len(w) > 0 and w[0].isupper() and w.lower() not in question_words:
+                question_words.append(w.lower())
+
+        scored = []
+        for chunk in chunks:
+            chunk_lower = chunk.text.lower()
+            # Contar palavras da pergunta que aparecem no chunk
+            matches = sum(1 for w in question_words if w in chunk_lower)
+            scored.append((matches, chunk))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [chunk for _, chunk in scored]
+
     def ask(self, question: str) -> AskResponse:
         """Responde a uma pergunta usando RAG híbrido."""
         start = time.time()
 
         # 1. Pesquisa semântica no ChromaDB
-        semantic_results = self.vector_store.search(question, n_results=10)
+        semantic_results = self.vector_store.search(question, n_results=15)
 
         # 2. Pesquisa híbrida (BM25 + semântica)
         top_chunks = self.hybrid_search.search(
             query=question,
-            n_results=5,
+            n_results=10,
             semantic_results=semantic_results,
         )
 
@@ -158,15 +176,21 @@ class RAGEngine:
                 processing_time_ms=int((time.time() - start) * 1000),
             )
 
-        # 3. Montar contexto
+        # 3. Re-rank: priorizar chunks que contêm palavras da pergunta
+        top_chunks = self._rerank_chunks(top_chunks, question)
+
+        # 4. Limitar a 4 chunks mais relevantes (menos ruído para o LLM)
+        top_chunks = top_chunks[:4]
+
+        # 5. Montar contexto
         context = "\n\n".join(
             f"[{c.source}, p.{c.page_number}]: {c.text}" for c in top_chunks
         )
 
-        # 4. Gerar resposta com LLM
+        # 6. Gerar resposta com LLM
         answer = self.llm.ask(question, context)
 
-        # 5. Construir sources (sem duplicados)
+        # 7. Construir sources (sem duplicados)
         seen = set()
         sources = []
         for c in top_chunks:

@@ -6,29 +6,10 @@ from typing import List
 from .models import DocumentChunk
 
 
-def text_quality_score(text: str) -> float:
-    """Avalia a qualidade do texto extraído (0.0 a 1.0)."""
-    if not text.strip():
-        return 0.0
-
-    words = text.split()
-    if not words:
-        return 0.0
-
-    # Contar palavras "reais" (mais de 2 caracteres, maioria letras)
-    good_words = 0
-    for w in words:
-        clean = w.strip(".,;:!?()[]{}\"'")
-        if len(clean) >= 2 and sum(c.isalpha() for c in clean) > len(clean) * 0.5:
-            good_words += 1
-
-    return good_words / len(words)
-
-
 def process_pdf(filepath: str) -> List[DocumentChunk]:
     """
     Extrai texto de um PDF e divide em chunks com referência à página.
-    Se o texto extraído for de má qualidade ou inexistente, faz OCR.
+    Combina texto extraído com OCR para capturar campos preenchidos.
     """
     doc = fitz.open(filepath)
     filename = Path(filepath).name
@@ -36,17 +17,29 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
     chunk_index = 0
 
     for page_num, page in enumerate(doc, start=1):
-        text = page.get_text().strip()
+        # Extrair texto da camada digital
+        digital_text = page.get_text().strip()
 
-        # Avaliar qualidade do texto extraído
-        quality = text_quality_score(text)
+        # Sempre fazer OCR para capturar campos preenchidos
+        ocr_text = ocr_page(page)
 
-        # Se qualidade baixa (< 0.4) ou sem texto, tentar OCR
-        if quality < 0.4 or not text:
-            ocr_text = ocr_page(page)
-            # Usar OCR se for melhor que o texto original
-            if text_quality_score(ocr_text) > quality:
+        # Usar o texto mais completo
+        if not digital_text:
+            text = ocr_text
+        elif not ocr_text:
+            text = digital_text
+        else:
+            # Combinar: se OCR tem conteúdo que o digital não tem, usar OCR
+            # OCR captura campos preenchidos que get_text() não vê
+            digital_words = set(digital_text.lower().split())
+            ocr_words = set(ocr_text.lower().split())
+            new_words = ocr_words - digital_words
+
+            # Se OCR encontrou >20% de palavras novas, usar OCR
+            if len(new_words) > len(ocr_words) * 0.2:
                 text = ocr_text
+            else:
+                text = digital_text
 
         if not text or len(text.strip()) < 20:
             continue
