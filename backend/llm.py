@@ -37,7 +37,7 @@ VALID_TYPES = ["contrato", "fatura", "recibo", "carta", "relatorio", "identifica
 class LocalLLM:
     def __init__(
         self,
-        model_name: str = "gemma4:26b",
+        model_name: str = "gemma4-nothink",
         ollama_url: str = "http://localhost:11434",
         auto_off_minutes: int = 10,
     ):
