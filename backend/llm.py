@@ -4,6 +4,7 @@ PaperMind — Local LLM via Ollama.
 Usa Ollama para correr o modelo localmente.
 """
 
+import re
 import requests
 
 
@@ -25,12 +26,12 @@ def trim_repetition(text: str) -> str:
 
 
 def clean_thinking(text: str) -> str:
-    """Remove blocos de thinking da resposta."""
-    # Remover tudo entre <think> e </think>
+    """Remove blocos de thinking e tags da resposta."""
     import re
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    # Remover "Thinking..." e similares
     text = re.sub(r'^Thinking\.\.\..*?\.\.\.done thinking\.?\s*', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Remover tags residuais do modelo
+    text = re.sub(r'<[^>]+>', '', text)
     return text.strip()
 
 
@@ -100,11 +101,21 @@ class LocalLLM:
 
     def ask(self, prompt: str, context: str = "") -> str:
         """Responde a uma pergunta com base no contexto dos documentos."""
-        system = """Responde directamente sem pensar passo a passo. Não uses <think> tags.
-És um assistente documental. Responde APENAS com base nos documentos fornecidos.
-Extrai informação exacta: nomes, datas, valores, números, moradas.
-Se a resposta não estiver nos documentos, diz "Não encontrei essa informação nos documentos."
-Responde em português. Sê completo mas conciso."""
+        system = """Responde directamente, sem pensar passo a passo, sem usar tags <think>.
+
+És um assistente documental para pessoas comuns. As tuas regras:
+
+1. INTERPRETA a pergunta de forma ampla. Se o utilizador diz "DODO", procura qualquer entidade que contenha "DODO" no nome (ex: "DODO Negócio de Arte Limitada"). O mesmo para abreviaturas, nomes parciais, ou referências informais.
+
+2. EXTRAI informação exacta dos documentos: nomes completos, datas, valores, números, moradas, NIFs, cláusulas.
+
+3. Se encontras a informação, responde de forma clara e directa. Cita os dados exactos.
+
+4. Se NÃO encontras a informação nos documentos fornecidos, diz "Não encontrei essa informação nos documentos."
+
+5. Responde SEMPRE em português. Sê completo mas conciso. Não repitas informação.
+
+6. Nunca inventes informação. Usa APENAS o que está nos documentos."""
 
         user_prompt = f"""Documentos:
 {context}

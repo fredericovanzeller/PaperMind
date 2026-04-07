@@ -4,10 +4,11 @@ PaperMind — RAG Engine (orquestrador).
 Liga todos os componentes: PDF processor, vector store, hybrid search, LLM.
 """
 
+import re
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Set
+from typing import List, Optional
 
 from .models import (
     AskResponse,
@@ -30,6 +31,11 @@ ICLOUD_PROCESSED = ICLOUD_BASE / "Processed"
 CHROMA_DIR = str(ICLOUD_BASE / "Database")
 
 
+def clean_query(query: str) -> str:
+    """Remove pontuação da query para busca limpa."""
+    return re.sub(r'[^\w\s]', '', query)
+
+
 class RAGEngine:
     def __init__(self, chroma_dir: Optional[str] = None):
         self.vector_store = VectorStore(persist_dir=chroma_dir or CHROMA_DIR)
@@ -37,10 +43,11 @@ class RAGEngine:
         self.llm = LocalLLM()
         self.documents: List[DocumentInfo] = []
         self._last_sync: Optional[datetime] = None
+        self._all_chunks: List[DocumentChunk] = []
 
-        # Reconstruir índice BM25 e lista de documentos a partir do ChromaDB
         existing_chunks = self.vector_store.get_all_chunks()
         if existing_chunks:
+            self._all_chunks = existing_chunks
             self.hybrid_search.build_index(existing_chunks)
             self._rebuild_document_list(existing_chunks)
             print(f"Índice reconstruído: {len(existing_chunks)} chunks, {len(self.documents)} documentos")
@@ -53,10 +60,8 @@ class RAGEngine:
                 doc_map[chunk.source] = {
                     "filename": chunk.source,
                     "total_chunks": 0,
-                    "pages": set(),
                 }
             doc_map[chunk.source]["total_chunks"] += 1
-            doc_map[chunk.source]["pages"].add(chunk.page_number)
 
         self.documents = []
         for name, info in doc_map.items():
@@ -70,12 +75,51 @@ class RAGEngine:
                 )
             )
 
+    def _text_search(self, query: str, n_results: int = 5) -> List[DocumentChunk]:
+        """Busca directa por texto — prioriza chunks com a palavra mais rara."""
+        cleaned = clean_query(query)
+        query_words = [w.lower() for w in cleaned.split() if len(w) > 2]
+        if not query_words or not self._all_chunks:
+            return []
+
+        # Encontrar frequência de cada palavra da query nos chunks
+        total = len(self._all_chunks)
+        word_freq = {}
+        for w in query_words:
+            word_freq[w] = sum(1 for c in self._all_chunks if w in c.text.lower())
+
+        # Ordenar palavras por raridade (menos frequente primeiro)
+        rare_words = sorted(query_words, key=lambda w: word_freq.get(w, total))
+
+        # Primeiro: chunks que contêm a palavra mais rara
+        rarest = rare_words[0]
+        priority_chunks = [c for c in self._all_chunks if rarest in c.text.lower()]
+
+        # Se encontrou chunks com a palavra rara, usar esses
+        if priority_chunks:
+            scored = []
+            for chunk in priority_chunks:
+                chunk_lower = chunk.text.lower()
+                matches = sum(1 for w in query_words if w in chunk_lower)
+                scored.append((matches, chunk))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [chunk for _, chunk in scored[:n_results]]
+
+        # Fallback: busca normal por contagem de matches
+        scored = []
+        for chunk in self._all_chunks:
+            chunk_lower = chunk.text.lower()
+            matches = sum(1 for w in query_words if w in chunk_lower)
+            if matches > 0:
+                scored.append((matches, chunk))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [chunk for _, chunk in scored[:n_results]]
+
     def ingest_file(
         self, filepath: str, original_name: Optional[str] = None
     ) -> UploadResponse:
-        """
-        Processa um ficheiro (PDF ou imagem com OCR) e indexa-o.
-        """
+        """Processa um ficheiro e indexa-o."""
         path = Path(filepath)
         name = original_name or path.name
 
@@ -129,8 +173,8 @@ class RAGEngine:
 
             self.vector_store.add_chunks(chunks)
             self.hybrid_search.add_chunks(chunks)
+            self._all_chunks.extend(chunks)
 
-            # Remover entrada antiga se existir (re-upload do mesmo ficheiro)
             self.documents = [d for d in self.documents if d.filename != name]
 
             self.documents.append(
@@ -160,41 +204,42 @@ class RAGEngine:
                 error=str(e),
             )
 
-    def _rerank_chunks(
-        self, chunks: List[DocumentChunk], question: str
-    ) -> List[DocumentChunk]:
-        """Re-ordena chunks por relevância directa à pergunta."""
-        question_words = [
-            w.lower() for w in question.split() if len(w) > 3
-        ]
-        for w in question.split():
-            if len(w) > 0 and w[0].isupper() and w.lower() not in question_words:
-                question_words.append(w.lower())
-
-        scored = []
-        for chunk in chunks:
-            chunk_lower = chunk.text.lower()
-            matches = sum(1 for w in question_words if w in chunk_lower)
-            scored.append((matches, chunk))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [chunk for _, chunk in scored]
-
     def ask(self, question: str) -> AskResponse:
-        """Responde a uma pergunta usando RAG híbrido."""
+        """Responde a uma pergunta usando busca por texto + RAG híbrido."""
         start = time.time()
 
-        # 1. Pesquisa semântica no ChromaDB
+        # 1. Busca directa por texto (prioriza palavras raras como nomes)
+        text_chunks = self._text_search(question, n_results=5)
+
+        # 2. Pesquisa semântica no ChromaDB
         semantic_results = self.vector_store.search(question, n_results=15)
 
-        # 2. Pesquisa híbrida (BM25 + semântica)
-        top_chunks = self.hybrid_search.search(
+        # 3. Pesquisa híbrida (BM25 + semântica)
+        hybrid_chunks = self.hybrid_search.search(
             query=question,
             n_results=10,
             semantic_results=semantic_results,
         )
 
-        if not top_chunks:
+        # 4. Combinar: text search primeiro (mais preciso para nomes)
+        combined = []
+        seen_keys = set()
+
+        for chunk in text_chunks:
+            key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                combined.append(chunk)
+
+        for chunk in hybrid_chunks:
+            key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                combined.append(chunk)
+
+        combined = combined[:4]
+
+        if not combined:
             return AskResponse(
                 question=question,
                 answer="Não encontrei informação relevante nos documentos indexados.",
@@ -202,22 +247,18 @@ class RAGEngine:
                 processing_time_ms=int((time.time() - start) * 1000),
             )
 
-        # 3. Re-rank
-        top_chunks = self._rerank_chunks(top_chunks, question)
-        top_chunks = top_chunks[:4]
-
-        # 4. Montar contexto
+        # 5. Montar contexto
         context = "\n\n".join(
-            f"[{c.source}, p.{c.page_number}]: {c.text}" for c in top_chunks
+            f"[{c.source}, p.{c.page_number}]: {c.text}" for c in combined
         )
 
-        # 5. Gerar resposta com LLM
+        # 6. Gerar resposta com LLM
         answer = self.llm.ask(question, context)
 
-        # 6. Construir sources (sem duplicados)
+        # 7. Construir sources (sem duplicados)
         seen = set()
         sources = []
-        for c in top_chunks:
+        for c in combined:
             key = f"{c.source}_p{c.page_number}_c{c.chunk_index}"
             if key not in seen:
                 seen.add(key)
