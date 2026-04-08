@@ -1,4 +1,4 @@
-"""PaperMind — ChromaDB vector store com metadata de tipo."""
+"""PaperMind — ChromaDB vector store com metadata de tipo e path."""
 
 import chromadb
 from typing import List, Tuple, Optional
@@ -17,8 +17,8 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def add_chunks(self, chunks: List[DocumentChunk], doc_type: str = "documento"):
-        """Adiciona chunks ao ChromaDB com metadata incluindo tipo."""
+    def add_chunks(self, chunks: List[DocumentChunk], doc_type: str = "documento", file_path: str = ""):
+        """Adiciona chunks ao ChromaDB com metadata incluindo tipo e path."""
         if not chunks:
             return
 
@@ -30,6 +30,7 @@ class VectorStore:
                 "page_number": c.page_number,
                 "chunk_index": c.chunk_index,
                 "doc_type": doc_type,
+                "file_path": file_path,
             }
             for c in chunks
         ]
@@ -93,6 +94,21 @@ class VectorStore:
                 doc_types[source] = doc_type
 
         return doc_types
+
+    def get_doc_paths(self) -> dict:
+        """Recupera o file_path de cada documento armazenado."""
+        if self.collection.count() == 0:
+            return {}
+
+        results = self.collection.get()
+        doc_paths = {}
+        for meta in results["metadatas"] or []:
+            source = meta["source"]
+            file_path = meta.get("file_path", "")
+            if source not in doc_paths and file_path:
+                doc_paths[source] = file_path
+
+        return doc_paths
 
     def delete_document(self, filename: str):
         """Remove todos os chunks de um documento."""

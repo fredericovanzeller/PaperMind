@@ -8,6 +8,10 @@ struct PDFKitView: NSViewRepresentable {
     let url: URL?
     @Binding var currentPage: Int
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
@@ -16,18 +20,35 @@ struct PDFKitView: NSViewRepresentable {
     }
 
     func updateNSView(_ pdfView: PDFView, context: Context) {
-        guard let url = url else { return }
-
-        // Só recarregar se o URL mudou
-        if pdfView.document?.documentURL != url {
-            pdfView.document = PDFDocument(url: url)
+        // Handle clearing: if url is nil, remove the document
+        guard let url = url else {
+            if context.coordinator.loadedURL != nil {
+                pdfView.document = nil
+                context.coordinator.loadedURL = nil
+            }
+            return
         }
 
-        // Deep linking: ir para a página da fonte citada
-        if currentPage > 0,
-           let page = pdfView.document?.page(at: currentPage - 1)
-        {
-            pdfView.go(to: page)
+        // Reload only when the URL actually changes (tracked via Coordinator)
+        let urlChanged = context.coordinator.loadedURL != url
+        if urlChanged {
+            let doc = PDFDocument(url: url)
+            pdfView.document = doc
+            context.coordinator.loadedURL = url
         }
+
+        // Deep linking: jump to page AFTER the document is set
+        // Defer to next run loop so PDFView has finished layout
+        if currentPage > 0 {
+            DispatchQueue.main.async {
+                if let page = pdfView.document?.page(at: currentPage - 1) {
+                    pdfView.go(to: page)
+                }
+            }
+        }
+    }
+
+    class Coordinator {
+        var loadedURL: URL?
     }
 }

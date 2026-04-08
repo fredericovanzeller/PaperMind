@@ -2,6 +2,7 @@
 // PaperMind — Layout principal macOS: 3 painéis
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var api = APIClient()
@@ -19,7 +20,12 @@ struct ContentView: View {
                 api: api,
                 selectedDocument: $selectedDocument,
                 onSelect: { doc in
+                    currentPage = 0
                     pdfURL = URL(fileURLWithPath: doc.filePath)
+                },
+                onDelete: { _ in
+                    pdfURL = nil
+                    currentPage = 0
                 }
             )
         } content: {

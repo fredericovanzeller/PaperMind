@@ -7,9 +7,12 @@ struct SidebarView: View {
     @ObservedObject var api: APIClient
     @Binding var selectedDocument: DocumentInfo?
     var onSelect: (DocumentInfo) -> Void
+    var onDelete: (DocumentInfo) -> Void
 
     @State private var documents: [DocumentInfo] = []
     @State private var searchText = ""
+    @State private var docToDelete: DocumentInfo?
+    @State private var showDeleteConfirm = false
 
     var filteredDocuments: [DocumentInfo] {
         if searchText.isEmpty {
@@ -46,6 +49,14 @@ struct SidebarView: View {
                 selectedDocument = doc
                 onSelect(doc)
             }
+            .contextMenu {
+                Button(role: .destructive) {
+                    docToDelete = doc
+                    showDeleteConfirm = true
+                } label: {
+                    Label("Apagar documento", systemImage: "trash")
+                }
+            }
         }
         .searchable(text: $searchText, prompt: "Procurar documentos...")
         .navigationTitle("Documentos")
@@ -70,6 +81,36 @@ struct SidebarView: View {
         .task {
             await refreshDocuments()
         }
+        .alert("Apagar documento?", isPresented: $showDeleteConfirm) {
+            Button("Cancelar", role: .cancel) {
+                docToDelete = nil
+            }
+            Button("Apagar", role: .destructive) {
+                if let doc = docToDelete {
+                    Task { await deleteDocument(doc) }
+                }
+            }
+        } message: {
+            if let doc = docToDelete {
+                Text("O documento \"\(doc.filename)\" será removido do índice e apagado.")
+            }
+        }
+    }
+
+    private func deleteDocument(_ doc: DocumentInfo) async {
+        do {
+            try await api.deleteDocument(doc.filename)
+            documents.removeAll { $0.filename == doc.filename }
+
+            // Clear selection and notify parent if the deleted doc was selected
+            if selectedDocument?.filename == doc.filename {
+                selectedDocument = nil
+                onDelete(doc)
+            }
+        } catch {
+            print("Erro ao apagar: \(error.localizedDescription)")
+        }
+        docToDelete = nil
     }
 
     private func refreshDocuments() async {

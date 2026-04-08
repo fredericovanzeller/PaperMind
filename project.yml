@@ -1,0 +1,74 @@
+name: PaperMind
+options:
+  bundleIdPrefix: com.frederico
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  xcodeVersion: "15"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  PaperMindMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: PaperMindMac
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.frederico.papermind.mac
+        PRODUCT_NAME: PaperMind
+        INFOPLIST_FILE: PaperMindMac/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PaperMind.entitlements
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        ENABLE_HARDENED_RUNTIME: YES
+    entitlements:
+      path: PaperMind.entitlements
+    info:
+      path: PaperMindMac/Info.plist
+      properties:
+        CFBundleName: PaperMind
+        CFBundleDisplayName: PaperMind
+        CFBundleIdentifier: com.frederico.papermind.mac
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0"
+        NSHumanReadableDescription: "Privacy-first local document RAG"
+        NSPrincipalClass: NSApplication
+        LSMinimumSystemVersion: "14.0"
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+
+  PaperMindIOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PaperMindIOS
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.frederico.papermind.ios
+        PRODUCT_NAME: PaperMind
+        INFOPLIST_FILE: PaperMindIOS/Info.plist
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: PaperMindIOS/Info.plist
+      properties:
+        CFBundleName: PaperMind
+        CFBundleDisplayName: PaperMind
+        CFBundleIdentifier: com.frederico.papermind.ios
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0"
+        NSCameraUsageDescription: "PaperMind uses the camera to scan documents"
+        NSPhotoLibraryUsageDescription: "PaperMind can import documents from your photo library"
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false

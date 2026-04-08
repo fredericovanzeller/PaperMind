@@ -26,7 +26,7 @@ struct ChatView: View {
                                 message: message,
                                 onSourceTap: onSourceTap
                             )
-                            .id(message.id)
+                            .id(message.id.uuidString)
                         }
 
                         if isLoading {
@@ -38,7 +38,7 @@ struct ChatView: View {
                 }
                 .onChange(of: messages.count) {
                     withAnimation {
-                        proxy.scrollTo(messages.last?.id ?? "typing", anchor: .bottom)
+                        proxy.scrollTo(messages.last?.id.uuidString ?? "typing", anchor: .bottom)
                     }
                 }
             }
@@ -88,7 +88,7 @@ struct ChatView: View {
         isLoading = true
 
         // Mensagem do assistente (vai sendo preenchida via streaming)
-        var assistantMessage = ChatMessage(role: .assistant, text: "")
+        let assistantMessage = ChatMessage(role: .assistant, text: "")
         messages.append(assistantMessage)
         let messageIndex = messages.count - 1
 
@@ -176,7 +176,7 @@ struct TypingIndicator: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(0..<3) { i in
+            ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(Color.secondary)
                     .frame(width: 6, height: 6)

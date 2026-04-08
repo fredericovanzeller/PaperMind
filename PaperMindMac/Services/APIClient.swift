@@ -154,6 +154,18 @@ class APIClient: ObservableObject {
         _ = try await URLSession.shared.data(for: request)
     }
 
+    // MARK: - Delete Document
+
+    func deleteDocument(_ filename: String) async throws {
+        let encoded = filename.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? filename
+        let url = URL(string: "\(baseURL)/documents/\(encoded)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        _ = try await URLSession.shared.data(for: request)
+    }
+
     // MARK: - Documents List
 
     func getDocuments() async throws -> [DocumentInfo] {

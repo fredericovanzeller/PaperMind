@@ -1,10 +1,13 @@
 """PaperMind — PDF & image text processor with 3-layer OCR."""
 
+import logging
 import fitz  # PyMuPDF
 import subprocess
 from pathlib import Path
 from typing import List
 from .models import DocumentChunk
+
+logger = logging.getLogger("papermind.pdf_processor")
 
 # Caminho do ocr_tool (Apple Vision CLI)
 OCR_TOOL_PATH = Path(__file__).parent.parent / "ocr_tool"
@@ -41,10 +44,10 @@ def ocr_apple_vision(image_path: str) -> str:
         if result.returncode == 0:
             return result.stdout.strip()
         else:
-            print(f"Apple Vision OCR erro: {result.stderr}")
+            logger.warning("Apple Vision OCR erro: %s", result.stderr)
             return ""
     except Exception as e:
-        print(f"Apple Vision OCR falhou: {e}")
+        logger.warning("Apple Vision OCR falhou: %s", e)
         return ""
 
 
@@ -58,7 +61,7 @@ def ocr_tesseract(image_path: str) -> str:
         text = pytesseract.image_to_string(image, lang="por+eng")
         return text.strip()
     except Exception as e:
-        print(f"Tesseract OCR falhou: {e}")
+        logger.warning("Tesseract OCR falhou: %s", e)
         return ""
 
 

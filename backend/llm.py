@@ -1,9 +1,21 @@
 """
 PaperMind — Local LLM via Ollama.
+
+Alterações v3.3:
+  - response_language configurável (auto/pt/en)
+  - model_name alterável em runtime
+v3.1:
+  - Validação de respostas vazias/degeneradas no ask()
+  - Logging estruturado para debug
+  - Timeout com mensagens claras
+  - suggest_filename() com sanitização
 """
 
+import logging
 import re
 import requests
+
+logger = logging.getLogger("papermind.llm")
 
 
 def trim_repetition(text: str) -> str:
@@ -40,12 +52,14 @@ class LocalLLM:
         model_name: str = "gemma4-nothink",
         ollama_url: str = "http://localhost:11434",
         auto_off_minutes: int = 10,
+        response_language: str = "auto",
     ):
         self.model_name = model_name
         self.ollama_url = ollama_url
         self.is_loaded = True
         self.auto_off_minutes = auto_off_minutes
-        print(f"LLM configurado: {self.model_name} via Ollama")
+        self.response_language = response_language
+        logger.info("LLM configurado: %s via Ollama", self.model_name)
 
     def load(self):
         try:
@@ -56,7 +70,7 @@ class LocalLLM:
             )
             self.is_loaded = True
         except Exception as e:
-            print(f"Erro ao carregar modelo: {e}")
+            logger.error("Erro ao carregar modelo: %s", e)
 
     def unload(self):
         try:
@@ -66,7 +80,7 @@ class LocalLLM:
                 timeout=10,
             )
             self.is_loaded = False
-            print("Modelo descarregado.")
+            logger.info("Modelo descarregado.")
         except Exception:
             pass
 
@@ -88,6 +102,11 @@ class LocalLLM:
                 },
                 timeout=300,
             )
+
+            if response.status_code != 200:
+                logger.warning("Ollama HTTP %d: %s", response.status_code, response.text[:200])
+                return ""
+
             result = response.json()
             content = result.get("message", {}).get("content", "").strip()
             content = clean_thinking(content)
@@ -98,8 +117,14 @@ class LocalLLM:
                 content = self._extract_from_thinking(thinking)
 
             return content
+        except requests.exceptions.Timeout:
+            logger.error("Erro Ollama: timeout (300s)")
+            return ""
+        except requests.exceptions.ConnectionError:
+            logger.error("Erro Ollama: servidor não acessível. Verifica se 'ollama serve' está a correr.")
+            return ""
         except Exception as e:
-            print(f"Erro Ollama: {e}")
+            logger.error("Erro Ollama: %s", e)
             return ""
 
     def _extract_from_thinking(self, thinking: str) -> str:
@@ -107,13 +132,10 @@ class LocalLLM:
         if not thinking:
             return ""
 
-        # Procurar padrões comuns de resposta final no thinking
-        # "Selected: carta" ou "*Selected: carta*"
         match = re.search(r'[Ss]elected?:?\s*(\w+)', thinking)
         if match:
             return match.group(1).strip()
 
-        # Procurar a última linha que tenha uma palavra válida
         lines = thinking.strip().split('\n')
         for line in reversed(lines):
             line = line.strip().strip('*').strip()
@@ -123,8 +145,38 @@ class LocalLLM:
 
         return ""
 
+    def _is_valid_answer(self, answer: str, question: str) -> bool:
+        """
+        Verifica se a resposta do LLM é válida e não degenerada.
+        Respostas inválidas: vazia, só uma palavra de classificação, ou eco da pergunta.
+        """
+        if not answer or len(answer.strip()) < 5:
+            return False
+
+        answer_lower = answer.strip().lower()
+
+        # Resposta é apenas uma palavra de classificação (leak do classify)
+        if answer_lower in VALID_TYPES:
+            return False
+
+        # Resposta é apenas a pergunta repetida
+        if answer_lower == question.strip().lower():
+            return False
+
+        return True
+
+    def _language_instruction(self) -> str:
+        """Retorna instrução de idioma com base na configuração."""
+        if self.response_language == "pt":
+            return "Responde SEMPRE em português."
+        elif self.response_language == "en":
+            return "Always respond in English."
+        else:
+            return "Responde no mesmo idioma da pergunta."
+
     def ask(self, prompt: str, context: str = "") -> str:
-        system = """Responde directamente, sem pensar passo a passo, sem usar tags.
+        lang = self._language_instruction()
+        system = f"""Responde directamente, sem pensar passo a passo, sem usar tags.
 
 És um assistente documental para pessoas comuns. As tuas regras:
 
@@ -136,7 +188,7 @@ class LocalLLM:
 
 4. Se NÃO encontras a informação nos documentos fornecidos, diz "Não encontrei essa informação nos documentos."
 
-5. Responde SEMPRE em português. Sê completo mas conciso. Não repitas informação.
+5. {lang} Sê completo mas conciso. Não repitas informação.
 
 6. Nunca inventes informação. Usa APENAS o que está nos documentos."""
 
@@ -146,6 +198,15 @@ class LocalLLM:
 Pergunta: {prompt}"""
 
         raw = self._call_ollama(user_prompt, system=system, max_tokens=500)
+
+        # Validar resposta — se degenerada, devolver mensagem clara
+        if not self._is_valid_answer(raw, prompt):
+            logger.warning("Resposta inválida para '%s': '%s'", prompt[:50], raw[:100])
+            if not raw:
+                return "Não consegui gerar uma resposta. O modelo pode estar sobrecarregado — tenta novamente."
+            else:
+                return "Não encontrei essa informação nos documentos indexados."
+
         return trim_repetition(raw)
 
     def classify(self, text: str) -> str:
@@ -161,7 +222,6 @@ Resposta (uma palavra):"""
         result = self._call_ollama(prompt, system=system, max_tokens=100)
         result = result.strip().lower()
 
-        # Extrair tipo válido da resposta
         for valid in VALID_TYPES:
             if valid in result:
                 return valid
@@ -180,4 +240,10 @@ Texto: {text[:200]}
 Nome:"""
 
         result = self._call_ollama(prompt, system=system, max_tokens=50)
-        return result.strip()
+        name = result.strip()
+
+        # Sanitizar: remover caracteres problemáticos
+        name = re.sub(r'[^\w\-]', '_', name)
+        name = re.sub(r'_+', '_', name).strip('_')
+
+        return name if name else f"{doc_type.capitalize()}_Documento"

@@ -58,7 +58,7 @@ struct SyncStatus: Codable {
     }
 }
 
-struct DocumentInfo: Codable, Identifiable {
+struct DocumentInfo: Codable, Identifiable, Hashable {
     var id: String { filename }
     let filename: String
     let totalChunks: Int

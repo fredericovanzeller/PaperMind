@@ -5,10 +5,13 @@ Monitoriza a pasta iCloud/PaperMind/Inbox/.
 Quando aparece um novo ficheiro, chama o callback para processar.
 """
 
+import logging
 import time
 import threading
 from pathlib import Path
 from typing import Callable, Set
+
+logger = logging.getLogger("papermind.inbox_watcher")
 
 SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".heic"}
 
@@ -28,7 +31,7 @@ class InboxWatcher:
         self.known_files = set(self.inbox_path.glob("*"))
         self._thread = threading.Thread(target=self._watch, daemon=True)
         self._thread.start()
-        print(f"A monitorizar: {self.inbox_path}")
+        logger.info("A monitorizar: %s", self.inbox_path)
 
     def stop(self):
         """Para a monitorização."""
@@ -45,14 +48,14 @@ class InboxWatcher:
 
                 for f in new_files:
                     if f.suffix.lower() in SUPPORTED_EXTENSIONS:
-                        print(f"Novo ficheiro detectado: {f.name}")
+                        logger.info("Novo ficheiro detectado: %s", f.name)
                         try:
                             self.on_new_file(str(f))
                         except Exception as e:
-                            print(f"Erro ao processar {f.name}: {e}")
+                            logger.error("Erro ao processar %s: %s", f.name, e)
 
                 self.known_files = current
             except Exception as e:
-                print(f"Erro no watcher: {e}")
+                logger.error("Erro no watcher: %s", e)
 
             time.sleep(2)
