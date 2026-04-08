@@ -3,6 +3,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 struct ContentView: View {
     @StateObject private var api = APIClient()
@@ -48,15 +49,30 @@ struct ContentView: View {
                 currentPage = page
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    openFilePicker()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Adicionar documento (⌘U)")
+                .keyboardShortcut("u", modifiers: .command)
+            }
+        }
         // Drop zone para arrastar PDFs
-        .onDrop(of: [.pdf, .image], isTargeted: $isDragging) { providers in
-            providers.forEach { provider in
-                provider.loadItem(forTypeIdentifier: "public.file-url") { item, _ in
-                    if let data = item as? Data,
-                       let url = URL(dataRepresentation: data, relativeTo: nil)
-                    {
-                        Task { _ = try? await api.uploadFile(url) }
-                    }
+        .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+            print("DEBUG: drop received, \(providers.count) providers")
+            for provider in providers {
+                print("DEBUG: provider types: \(provider.registeredTypeIdentifiers)")
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
+                    print("DEBUG: data=\(data?.count ?? -1) error=\(String(describing: error))")
+                    guard let data = data,
+                          let path = String(data: data, encoding: .utf8),
+                          let url = URL(string: path.trimmingCharacters(in: .whitespacesAndNewlines))
+                    else { return }
+                    print("DEBUG: uploading \(url)")
+                    Task { _ = try? await api.uploadFile(url) }
                 }
             }
             return true
@@ -81,6 +97,21 @@ struct ContentView: View {
         .task {
             await api.checkHealth()
             isBackendReady = api.isBackendAvailable
+        }
+    }
+
+    private func openFilePicker() {
+        let panel = NSOpenPanel()
+        panel.title = "Adicionar documento"
+        panel.allowedContentTypes = [.pdf, .jpeg, .png]
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            Task { _ = try? await api.uploadFile(url) }
         }
     }
 }
