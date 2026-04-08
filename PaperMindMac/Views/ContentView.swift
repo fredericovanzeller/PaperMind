@@ -31,6 +31,7 @@ struct ContentView: View {
         } content: {
             // Painel central: PDF viewer com deep linking
             PDFKitView(url: pdfURL, currentPage: $currentPage)
+                .id(pdfURL)
                 .overlay {
                     if pdfURL == nil {
                         ContentUnavailableView(

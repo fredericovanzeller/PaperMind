@@ -2,6 +2,7 @@
 // PaperMind — Barra lateral com documentos indexados
 
 import SwiftUI
+import AppKit
 
 struct SidebarView: View {
     @ObservedObject var api: APIClient
@@ -44,12 +45,21 @@ struct SidebarView: View {
                 }
             }
             .padding(.vertical, 4)
+            .contentShape(Rectangle())
             .tag(doc)
             .onTapGesture {
                 selectedDocument = doc
                 onSelect(doc)
             }
             .contextMenu {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: doc.filePath)])
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+
+                Divider()
+
                 Button(role: .destructive) {
                     docToDelete = doc
                     showDeleteConfirm = true

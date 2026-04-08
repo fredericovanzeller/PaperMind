@@ -150,14 +150,10 @@ class LocalLLM:
         Verifica se a resposta do LLM é válida e não degenerada.
         Respostas inválidas: vazia, só uma palavra de classificação, ou eco da pergunta.
         """
-        if not answer or len(answer.strip()) < 5:
+        if not answer or len(answer.strip()) < 15:
             return False
 
         answer_lower = answer.strip().lower()
-
-        # Resposta é apenas uma palavra de classificação (leak do classify)
-        if answer_lower in VALID_TYPES:
-            return False
 
         # Resposta é apenas a pergunta repetida
         if answer_lower == question.strip().lower():
@@ -190,14 +186,16 @@ class LocalLLM:
 
 5. {lang} Sê completo mas conciso. Não repitas informação.
 
-6. Nunca inventes informação. Usa APENAS o que está nos documentos."""
+6. Nunca inventes informação. Usa APENAS o que está nos documentos.
+
+7. Se a informação estiver implícita ou podes inferir com alta confiança a partir do contexto, responde com essa inferência e indica que é baseada no documento."""
 
         user_prompt = f"""Documentos:
 {context}
 
 Pergunta: {prompt}"""
 
-        raw = self._call_ollama(user_prompt, system=system, max_tokens=500)
+        raw = self._call_ollama(user_prompt, system=system, max_tokens=800)
 
         # Validar resposta — se degenerada, devolver mensagem clara
         if not self._is_valid_answer(raw, prompt):
