@@ -13,6 +13,7 @@ v3.1:
 
 import logging
 import re
+import unicodedata
 import requests
 
 logger = logging.getLogger("papermind.llm")
@@ -43,7 +44,13 @@ def clean_thinking(text: str) -> str:
     return text.strip()
 
 
-VALID_TYPES = ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]
+def normalize_text(text: str) -> str:
+    """Remove acentos e normaliza texto para comparação (médico → medico)."""
+    nfkd = unicodedata.normalize("NFD", text)
+    return "".join(c for c in nfkd if unicodedata.category(c) != "Mn").lower().strip()
+
+
+DEFAULT_CATEGORY_NAMES = ["medico", "financeiro", "legal", "pessoal", "outro"]
 
 
 class LocalLLM:
@@ -84,7 +91,7 @@ class LocalLLM:
         except Exception:
             pass
 
-    def _call_ollama(self, prompt: str, system: str = "", max_tokens: int = 500) -> str:
+    def _call_ollama(self, prompt: str, system: str = "", max_tokens: int = 500, valid_names: list = None) -> str:
         """Chama o Ollama API. Retorna content, ou extrai do thinking se vazio."""
         try:
             response = requests.post(
@@ -114,7 +121,7 @@ class LocalLLM:
             # Se content vazio, tentar extrair do thinking
             if not content:
                 thinking = result.get("message", {}).get("thinking", "")
-                content = self._extract_from_thinking(thinking)
+                content = self._extract_from_thinking(thinking, valid_names=valid_names)
 
             return content
         except requests.exceptions.Timeout:
@@ -127,21 +134,29 @@ class LocalLLM:
             logger.error("Erro Ollama: %s", e)
             return ""
 
-    def _extract_from_thinking(self, thinking: str) -> str:
+    def _extract_from_thinking(self, thinking: str, valid_names: list = None) -> str:
         """Tenta extrair a resposta final do bloco de thinking."""
         if not thinking:
             return ""
 
-        match = re.search(r'[Ss]elected?:?\s*(\w+)', thinking)
-        if match:
-            return match.group(1).strip()
+        names = valid_names or []
 
-        lines = thinking.strip().split('\n')
-        for line in reversed(lines):
-            line = line.strip().strip('*').strip()
-            for valid in VALID_TYPES:
-                if valid in line.lower():
+        # Procurar padrão "Selected: X" ou "Categoria: X"
+        match = re.search(r'(?:[Ss]elected?|[Cc]ategoria):?\s*(\w+)', thinking)
+        if match:
+            candidate = normalize_text(match.group(1))
+            for valid in names:
+                if candidate == valid:
                     return valid
+
+        # Procurar nas últimas 3 linhas do thinking — apenas match exacto de palavras
+        if names:
+            lines = thinking.strip().split('\n')
+            for line in reversed(lines[-3:]):
+                words = re.findall(r'\w+', normalize_text(line))
+                for valid in names:
+                    if valid in words:
+                        return valid
 
         return ""
 
@@ -188,14 +203,18 @@ class LocalLLM:
 
 6. Nunca inventes informação. Usa APENAS o que está nos documentos.
 
-7. Se a informação estiver implícita ou podes inferir com alta confiança a partir do contexto, responde com essa inferência e indica que é baseada no documento."""
+7. Se a informação estiver implícita ou podes inferir com alta confiança a partir do contexto, responde com essa inferência e indica que é baseada no documento.
+
+8. O texto dos documentos pode vir de OCR (reconhecimento óptico) e conter erros, espaços estranhos, ou formatação estranha. Ignora esses artefactos e foca-te no conteúdo e significado. Em formulários, os números 0, 1, 2 junto a frases representam pontuações/respostas.
+
+9. LEIA todo o contexto com atenção antes de responder. A informação pode estar em qualquer parte do texto fornecido, não apenas no início."""
 
         user_prompt = f"""Documentos:
 {context}
 
 Pergunta: {prompt}"""
 
-        raw = self._call_ollama(user_prompt, system=system, max_tokens=800)
+        raw = self._call_ollama(user_prompt, system=system, max_tokens=1500)
 
         # Validar resposta — se degenerada, devolver mensagem clara
         if not self._is_valid_answer(raw, prompt):
@@ -207,23 +226,62 @@ Pergunta: {prompt}"""
 
         return trim_repetition(raw)
 
-    def classify(self, text: str) -> str:
-        """Classifica o tipo de documento."""
-        system = "Responde com UMA única palavra. Sem explicações."
-        prompt = f"""Classifica este documento. Escolhe UMA palavra da lista:
-contrato, fatura, recibo, carta, relatorio, identificacao, outro
+    def classify(self, text: str, categories_prompt: str = "", valid_names: list = None, filename: str = "") -> str:
+        """Classifica o tipo de documento usando categorias dinâmicas (built-in + custom)."""
+        if valid_names is None:
+            valid_names = DEFAULT_CATEGORY_NAMES
 
-Texto do documento: {text[:300]}
+        # Use dynamic categories prompt if provided, otherwise use defaults
+        if not categories_prompt:
+            categories_prompt = (
+                "medico — relatórios médicos, análises clínicas, receitas, formulários de saúde, exames, diagnósticos, CBCL, consultas\n"
+                "financeiro — faturas, recibos, impostos, extratos bancários, declarações fiscais, orçamentos, propostas comerciais, day rates, budgets, estimativas de custo, pagamentos\n"
+                "legal — contratos, acordos, procurações, notificações legais, termos e condições, escrituras\n"
+                "pessoal — documentos de identificação, certidões, seguros, registos pessoais, passaportes, cartas de condução"
+            )
 
-Resposta (uma palavra):"""
+        names_list = ", ".join(n for n in valid_names if n != "outro")
 
-        result = self._call_ollama(prompt, system=system, max_tokens=100)
-        result = result.strip().lower()
+        filename_line = f"Nome do ficheiro: {filename}\n" if filename else ""
 
-        for valid in VALID_TYPES:
-            if valid in result:
+        system = "Responde com UMA única palavra. Sem explicações, sem pontuação."
+        prompt = f"""Classifica este documento numa das seguintes categorias. Responde com UMA ÚNICA palavra da lista: {names_list}, outro
+
+{categories_prompt}
+
+IMPORTANTE: Papers académicos, artigos de IA, textos técnicos genéricos → outro
+
+Se não encaixar em nenhuma das categorias acima, responde: outro
+
+{filename_line}Texto do documento (primeiros 1500 caracteres):
+{text[:1500]}
+
+Categoria (uma palavra):"""
+
+        raw_result = self._call_ollama(prompt, system=system, max_tokens=100, valid_names=valid_names)
+        logger.info("LLM classify raw response: '%s'", raw_result[:100])
+
+        # Extrair primeira palavra, normalizar acentos e pontuação
+        result = raw_result.strip().split()[0] if raw_result.strip() else ""
+        result = re.sub(r'[^\w]', '', result)
+        result = normalize_text(result)
+
+        logger.info("LLM classify normalized: '%s' (valid: %s)", result, valid_names)
+
+        # Match exacto — não substring
+        for valid in valid_names:
+            if result == valid:
                 return valid
 
+        # Fallback: tentar match em todas as palavras da resposta (para respostas multi-palavra)
+        if raw_result.strip():
+            all_words = [normalize_text(re.sub(r'[^\w]', '', w)) for w in raw_result.strip().split()]
+            for valid in valid_names:
+                if valid in all_words:
+                    logger.info("LLM classify fallback match: '%s' found in words", valid)
+                    return valid
+
+        logger.warning("LLM classify: nenhum match para '%s', usando 'outro'", raw_result[:80])
         return "outro"
 
     def suggest_filename(self, text: str, doc_type: str) -> str:

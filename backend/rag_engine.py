@@ -28,10 +28,11 @@ from .models import (
     SyncStatus,
     UploadResponse,
 )
-from .pdf_processor import process_pdf, process_image_text
+from .pdf_processor import process_pdf, process_image_text, process_docx, process_txt
 from .embeddings import VectorStore
 from .hybrid_search import HybridSearch
 from .llm import LocalLLM
+from .categories import CategoryManager
 
 
 ICLOUD_BASE = Path.home() / "Developer" / "PaperMind" / "data"
@@ -39,7 +40,7 @@ ICLOUD_INBOX = ICLOUD_BASE / "Inbox"
 ICLOUD_PROCESSED = ICLOUD_BASE / "Processed"
 CHROMA_DIR = str(ICLOUD_BASE / "Database")
 
-MAX_CONTEXT_CHARS = 6000
+MAX_CONTEXT_CHARS = 40000
 
 
 def clean_query(query: str) -> str:
@@ -51,6 +52,7 @@ class RAGEngine:
         self.vector_store = VectorStore(persist_dir=chroma_dir or CHROMA_DIR)
         self.hybrid_search = HybridSearch(semantic_weight=0.6)
         self.llm = LocalLLM()
+        self.category_manager = CategoryManager(ICLOUD_BASE)
         self.documents: List[DocumentInfo] = []
         self._last_sync: Optional[datetime] = None
         self._all_chunks: List[DocumentChunk] = []
@@ -194,7 +196,7 @@ class RAGEngine:
         return [chunk for _, chunk in scored[:n_results]]
 
     def ingest_file(
-        self, filepath: str, original_name: Optional[str] = None
+        self, filepath: str, original_name: Optional[str] = None, skip_copy: bool = False
     ) -> UploadResponse:
         path = Path(filepath)
         name = original_name or path.name
@@ -217,6 +219,10 @@ class RAGEngine:
                         error="Sem texto extraído (OCR necessário)",
                     )
                 chunks = process_image_text(ocr_text, name)
+            elif path.suffix.lower() == ".docx":
+                chunks = process_docx(filepath)
+            elif path.suffix.lower() in {".txt", ".md"}:
+                chunks = process_txt(filepath)
             else:
                 return UploadResponse(
                     status="error",
@@ -233,20 +239,22 @@ class RAGEngine:
                     error="Nenhum texto extraído (documento pode ser um scan)",
                 )
 
-            # Classificar tipo
+            # Classificar tipo — enviar mais texto para melhor classificação
             try:
-                doc_type = self.llm.classify(chunks[0].text)
-                for valid in ["contrato", "fatura", "recibo", "carta", "relatorio", "identificacao", "outro"]:
-                    if valid in doc_type:
-                        doc_type = valid
-                        break
-                else:
-                    doc_type = "outro"
-            except Exception:
+                classify_text = " ".join(c.text for c in chunks[:3])  # primeiros 3 chunks
+                cat_prompt = self.category_manager.get_classify_prompt_categories()
+                cat_names = self.category_manager.get_all_names()
+                doc_type = self.llm.classify(classify_text, categories_prompt=cat_prompt, valid_names=cat_names, filename=name)
+                logger.info("Auto-classificação: %s → %s", name, doc_type)
+            except Exception as e:
+                logger.warning("Erro na auto-classificação de %s: %s", name, e)
                 doc_type = "outro"
 
-            # Copiar ficheiro para dentro do PaperMind
-            stored_path = self._copy_to_processed(filepath, name, doc_type)
+            # Copiar ficheiro para dentro do PaperMind (skip em reindex)
+            if skip_copy:
+                stored_path = filepath
+            else:
+                stored_path = self._copy_to_processed(filepath, name, doc_type)
 
             for chunk in chunks:
                 chunk.source = name
@@ -286,6 +294,29 @@ class RAGEngine:
                 error=str(e),
             )
 
+    def update_category(self, filename: str, new_category: str) -> dict:
+        """Atualiza a categoria de um documento."""
+        doc = next((d for d in self.documents if d.filename == filename), None)
+        if not doc:
+            return {"status": "error", "error": "Document not found"}
+
+        # Atualizar no ChromaDB
+        self.vector_store.update_doc_type(filename, new_category)
+
+        # Atualizar na lista em memória
+        idx = next(i for i, d in enumerate(self.documents) if d.filename == filename)
+        old_type = self.documents[idx].document_type
+        self.documents[idx] = DocumentInfo(
+            filename=doc.filename,
+            total_chunks=doc.total_chunks,
+            document_type=new_category,
+            date_added=doc.date_added,
+            file_path=doc.file_path,
+        )
+
+        logger.info("Categoria atualizada: %s → %s → %s", filename, old_type, new_category)
+        return {"status": "updated", "filename": filename, "old_category": old_type, "new_category": new_category}
+
     def delete_document(self, filename: str) -> dict:
         """Remove um documento: chunks do ChromaDB, índice BM25, e ficheiro."""
         # 1. Encontrar o path antes de apagar
@@ -323,42 +354,72 @@ class RAGEngine:
 
     def ask(self, question: str) -> AskResponse:
         start = time.time()
+        total_chunks = len(self._all_chunks)
 
-        text_chunks = self._text_search(question, n_results=2)
-        semantic_results = self.vector_store.search(question, n_results=15)
-        hybrid_chunks = self.hybrid_search.search(
-            query=question,
-            n_results=10,
-            semantic_results=semantic_results,
-        )
+        # ── Small corpus optimization ──
+        # If we have ≤ 50 chunks total, send EVERYTHING to the LLM.
+        # No point being selective with a 4-page document.
+        if total_chunks <= 50 and total_chunks > 0:
+            # Sort by source then page/chunk for coherent reading order
+            combined = sorted(
+                self._all_chunks,
+                key=lambda c: (c.source, c.page_number, c.chunk_index),
+            )
+            logger.info(
+                "[RAG] Small corpus mode — sending ALL %d chunks to LLM",
+                len(combined),
+            )
+        else:
+            # ── Normal search mode for larger corpora ──
+            text_chunks = self._text_search(question, n_results=6)
+            semantic_results = self.vector_store.search(question, n_results=25)
+            hybrid_chunks = self.hybrid_search.search(
+                query=question,
+                n_results=20,
+                semantic_results=semantic_results,
+            )
 
-        # Semantic/hybrid first (higher quality), text search supplements
-        combined = []
-        seen_keys = set()
+            # Also extract pure semantic chunks (high confidence)
+            semantic_chunks = [chunk for chunk, score in semantic_results if score > 0.3]
 
-        for chunk in hybrid_chunks:
-            key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
-            if key not in seen_keys:
-                seen_keys.add(key)
-                combined.append(chunk)
+            # Combine: hybrid first, then semantic, then text search supplements
+            combined = []
+            seen_keys = set()
 
-        for chunk in text_chunks:
-            key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
-            if key not in seen_keys:
-                seen_keys.add(key)
-                combined.append(chunk)
+            for chunk in hybrid_chunks:
+                key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    combined.append(chunk)
 
-        # Limit per document so no single source dominates context
-        MAX_CHUNKS_PER_DOC = 3
-        doc_counts: dict = {}
-        balanced = []
-        for chunk in combined:
-            count = doc_counts.get(chunk.source, 0)
-            if count < MAX_CHUNKS_PER_DOC:
-                balanced.append(chunk)
-                doc_counts[chunk.source] = count + 1
+            for chunk in semantic_chunks:
+                key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    combined.append(chunk)
 
-        combined = balanced[:6]
+            for chunk in text_chunks:
+                key = f"{chunk.source}_p{chunk.page_number}_c{chunk.chunk_index}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    combined.append(chunk)
+
+            # Limit per document — generous cap
+            MAX_CHUNKS_PER_DOC = 15
+            doc_counts: dict = {}
+            balanced = []
+            for chunk in combined:
+                count = doc_counts.get(chunk.source, 0)
+                if count < MAX_CHUNKS_PER_DOC:
+                    balanced.append(chunk)
+                    doc_counts[chunk.source] = count + 1
+
+            combined = balanced[:25]
+
+            logger.info(
+                "[RAG] Search results — hybrid: %d, semantic: %d, text: %d → combined: %d",
+                len(hybrid_chunks), len(semantic_chunks), len(text_chunks), len(combined),
+            )
 
         if not combined:
             return AskResponse(
@@ -417,7 +478,7 @@ class RAGEngine:
         ICLOUD_INBOX.mkdir(parents=True, exist_ok=True)
         processed = []
         for f in sorted(ICLOUD_INBOX.iterdir()):
-            if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic"}:
+            if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".docx", ".txt", ".md"}:
                 result = self.ingest_file(str(f), original_name=f.name)
                 if result.status == "success":
                     processed.append(result.filename)
@@ -438,6 +499,90 @@ class RAGEngine:
 
         return processed
 
+    def reindex_all(self) -> dict:
+        """Re-indexa todos os documentos com os novos embeddings e chunk size."""
+        docs_to_reindex = []
+        for doc in self.documents:
+            if doc.file_path and Path(doc.file_path).exists():
+                docs_to_reindex.append((doc.filename, doc.file_path))
+
+        if not docs_to_reindex:
+            return {"status": "nothing_to_reindex", "count": 0}
+
+        logger.info("Reindexing %d documentos...", len(docs_to_reindex))
+
+        # Clear everything
+        self.vector_store.delete_all()
+        self._all_chunks = []
+        old_docs = list(self.documents)
+        self.documents = []
+
+        reindexed = []
+        errors = []
+        for name, path in docs_to_reindex:
+            try:
+                result = self.ingest_file(path, original_name=name, skip_copy=True)
+                if result.status == "success":
+                    reindexed.append(name)
+                else:
+                    errors.append(f"{name}: {result.error}")
+            except Exception as e:
+                errors.append(f"{name}: {str(e)}")
+
+        # Rebuild BM25
+        self.hybrid_search.build_index(self._all_chunks)
+
+        logger.info(
+            "Reindex completo: %d ok, %d erros", len(reindexed), len(errors)
+        )
+
+        return {
+            "status": "reindexed",
+            "reindexed": len(reindexed),
+            "errors": errors,
+            "total_chunks": len(self._all_chunks),
+        }
+
+    def reclassify_all(self) -> dict:
+        """Re-classifica todos os documentos usando o LLM com as categorias atuais."""
+        if not self.documents:
+            return {"status": "nothing_to_reclassify", "count": 0}
+
+        cat_prompt = self.category_manager.get_classify_prompt_categories()
+        cat_names = self.category_manager.get_all_names()
+
+        results = []
+        for doc in self.documents:
+            # Get chunks for this document
+            doc_chunks = [c for c in self._all_chunks if c.source == doc.filename]
+            if not doc_chunks:
+                continue
+
+            classify_text = " ".join(c.text for c in doc_chunks[:3])
+
+            try:
+                new_type = self.llm.classify(classify_text, categories_prompt=cat_prompt, valid_names=cat_names, filename=doc.filename)
+            except Exception:
+                new_type = "outro"
+
+            old_type = doc.document_type
+            if new_type != old_type:
+                self.update_category(doc.filename, new_type)
+                results.append({"filename": doc.filename, "old": old_type, "new": new_type})
+                logger.info("Reclassificado: %s: %s → %s", doc.filename, old_type, new_type)
+            else:
+                results.append({"filename": doc.filename, "old": old_type, "new": new_type, "unchanged": True})
+
+        changed = [r for r in results if not r.get("unchanged")]
+        logger.info("Reclassificação: %d documentos, %d alterados", len(results), len(changed))
+
+        return {
+            "status": "reclassified",
+            "total": len(results),
+            "changed": len(changed),
+            "details": results,
+        }
+
     def list_documents(self) -> List[dict]:
         return [doc.model_dump() for doc in self.documents]
 
@@ -445,7 +590,7 @@ class RAGEngine:
         ICLOUD_INBOX.mkdir(parents=True, exist_ok=True)
         inbox_files = [
             f for f in ICLOUD_INBOX.iterdir()
-            if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic"}
+            if f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".docx", ".txt", ".md"}
         ]
         return SyncStatus(
             inbox_count=len(inbox_files),
