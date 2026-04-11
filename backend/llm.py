@@ -91,9 +91,13 @@ class LocalLLM:
         except Exception:
             pass
 
-    def _call_ollama(self, prompt: str, system: str = "", max_tokens: int = 500, valid_names: list = None) -> str:
+    def _call_ollama(self, prompt: str, system: str = "", max_tokens: int = 500, valid_names: list = None, temperature: float | None = None) -> str:
         """Chama o Ollama API. Retorna content, ou extrai do thinking se vazio."""
         try:
+            options = {"num_predict": max_tokens}
+            if temperature is not None:
+                options["temperature"] = temperature
+
             response = requests.post(
                 f"{self.ollama_url}/api/chat",
                 json={
@@ -103,9 +107,7 @@ class LocalLLM:
                         {"role": "user", "content": prompt},
                     ],
                     "stream": False,
-                    "options": {
-                        "num_predict": max_tokens,
-                    },
+                    "options": options,
                 },
                 timeout=300,
             )
@@ -244,45 +246,165 @@ Pergunta: {prompt}"""
 
         filename_line = f"Nome do ficheiro: {filename}\n" if filename else ""
 
-        system = "Responde com UMA única palavra. Sem explicações, sem pontuação."
-        prompt = f"""Classifica este documento numa das seguintes categorias. Responde com UMA ÚNICA palavra da lista: {names_list}, outro
-
-{categories_prompt}
-
-IMPORTANTE: Papers académicos, artigos de IA, textos técnicos genéricos → outro
-
-Se não encaixar em nenhuma das categorias acima, responde: outro
-
-{filename_line}Texto do documento (primeiros 1500 caracteres):
+        system = "You are a document classifier. Reply with ONE word only — the category name. No explanations."
+        prompt = f"""{filename_line}Text:
 {text[:1500]}
 
-Categoria (uma palavra):"""
+---
+Categories:
+{categories_prompt}
+outro — anything that does NOT clearly fit the categories above (academic papers, AI/ML articles, business plans, marketing, technical docs, travel tickets)
 
-        raw_result = self._call_ollama(prompt, system=system, max_tokens=100, valid_names=valid_names)
+Rules:
+- "medico" = ONLY personal health documents (clinical exams, prescriptions, medical consultations, health forms like CBCL)
+- Business documents, budgets, proposals, academic papers are NEVER "medico"
+- When in doubt, reply: outro
+
+Examples:
+"Fatura_EDP.pdf" (electricity bill) → financeiro
+"CBCL.pdf" (child behavior checklist) → medico
+"App Funding Plan.pdf" (business strategy) → outro
+"Attention Is All You Need.pdf" (AI paper) → outro
+"Orcamento_Fotografia.pdf" (photography budget) → financeiro
+
+Category:"""
+
+        raw_result = self._call_ollama(prompt, system=system, max_tokens=100, valid_names=valid_names, temperature=0.0)
         logger.info("LLM classify raw response: '%s'", raw_result[:100])
 
+        matched = self._match_category(raw_result, valid_names)
+        if matched:
+            # Validate: catch obvious misclassifications
+            validated = self._validate_classification(matched, filename, text[:1500])
+            if validated != matched:
+                logger.info("LLM classify override: '%s' → '%s' for '%s'", matched, validated, filename)
+            return validated
+
+        # Retry with shorter fallback prompt if first attempt returned no match
+        logger.info("LLM classify retry with shorter prompt for '%s'", filename or "unknown")
+        retry_prompt = f"""Classify: {names_list}, outro
+
+{filename_line}{text[:500]}
+
+Answer (one word):"""
+        raw_retry = self._call_ollama(retry_prompt, system=system, max_tokens=20, valid_names=valid_names, temperature=0.0)
+        logger.info("LLM classify retry raw: '%s'", raw_retry[:100])
+
+        matched = self._match_category(raw_retry, valid_names)
+        if matched:
+            validated = self._validate_classification(matched, filename, text[:1500])
+            return validated
+
+        # Last resort: keyword-based fallback when LLM returns empty
+        keyword_match = self._keyword_classify(filename, text[:1500], valid_names)
+        if keyword_match:
+            logger.info("LLM classify keyword fallback: '%s'", keyword_match)
+            return keyword_match
+
+        logger.warning("LLM classify: nenhum match após retry, usando 'outro'")
+        return "outro"
+
+    # Signals that a document is NOT medical/health — override to "outro"
+    _NOT_MEDICAL_SIGNALS = [
+        "marketing", "funding", "business", "strategy", "campaign",
+        "abstract", "university", "arxiv", "conference", "proceedings",
+        "neural network", "transformer", "machine learning", "deep learning",
+        "budget", "proposal", "quotation", "estimate",
+    ]
+
+    # Signals that a document is NOT legal — override to "outro"
+    _NOT_LEGAL_SIGNALS = [
+        "abstract", "university", "arxiv", "conference", "proceedings",
+        "neural network", "transformer", "machine learning", "attention mechanism",
+    ]
+
+    def _validate_classification(self, category: str, filename: str, text: str) -> str:
+        """Override obvious LLM misclassifications using filename + text signals."""
+        combined = (filename + " " + text[:800]).lower()
+
+        if category == "medico":
+            # Check if this is clearly NOT a medical document
+            non_medical_hits = sum(1 for s in self._NOT_MEDICAL_SIGNALS if s in combined)
+            # Also check: does the text have any actual medical keywords?
+            medical_hits = sum(1 for kw in self._KEYWORD_MAP.get("medico", []) if kw in combined)
+            if non_medical_hits >= 2 and medical_hits == 0:
+                logger.info("Validation override: '%s' has %d non-medical signals, 0 medical keywords", filename, non_medical_hits)
+                return "outro"
+
+        if category == "legal":
+            non_legal_hits = sum(1 for s in self._NOT_LEGAL_SIGNALS if s in combined)
+            legal_hits = sum(1 for kw in self._KEYWORD_MAP.get("legal", []) if kw in combined)
+            if non_legal_hits >= 2 and legal_hits == 0:
+                logger.info("Validation override: '%s' has %d non-legal signals, 0 legal keywords", filename, non_legal_hits)
+                return "outro"
+
+        return category
+
+    _KEYWORD_MAP = {
+        "medico": [
+            "análises clínicas", "analises clinicas", "receita médica",
+            "consulta médica", "diagnóstico", "diagnostico", "exame médico",
+            "laboratório", "laboratorio", "hemograma", "colesterol",
+            "prescrição", "prescricao", "cbcl", "comportamento da criança",
+            "questionário de comportamentos", "questionario de comportamentos",
+            "achenbach", "aseba", "clínico", "clinico", "saúde", "saude",
+        ],
+        "financeiro": [
+            "fatura", "factura", "recibo", "imposto", "irs", "iva",
+            "extrato bancário", "extrato bancario", "orçamento", "orcamento",
+            "budget", "day rate", "proposta comercial", "estimativa de custo",
+        ],
+        "legal": [
+            "contrato", "cláusula", "clausula", "procuração", "procuracao",
+            "escritura", "notificação judicial", "termos e condições",
+        ],
+        "pessoal": [
+            "bilhete de identidade", "cartão de cidadão", "cartao de cidadao",
+            "passaporte", "carta de condução", "certidão", "certidao",
+        ],
+    }
+
+    def _keyword_classify(self, filename: str, text: str, valid_names: list) -> str | None:
+        """Classificação por keywords quando o LLM falha."""
+        combined = (filename + " " + text).lower()
+        best_cat = None
+        best_hits = 0
+
+        for cat, keywords in self._KEYWORD_MAP.items():
+            if cat not in valid_names:
+                continue
+            hits = sum(1 for kw in keywords if kw in combined)
+            if hits > best_hits:
+                best_hits = hits
+                best_cat = cat
+
+        return best_cat if best_hits >= 2 else None
+
+    def _match_category(self, raw_result: str, valid_names: list) -> str | None:
+        """Tenta extrair uma categoria válida da resposta do LLM. Retorna None se não encontrar."""
+        if not raw_result or not raw_result.strip():
+            return None
+
         # Extrair primeira palavra, normalizar acentos e pontuação
-        result = raw_result.strip().split()[0] if raw_result.strip() else ""
+        result = raw_result.strip().split()[0]
         result = re.sub(r'[^\w]', '', result)
         result = normalize_text(result)
 
         logger.info("LLM classify normalized: '%s' (valid: %s)", result, valid_names)
 
-        # Match exacto — não substring
+        # Match exacto
         for valid in valid_names:
             if result == valid:
                 return valid
 
-        # Fallback: tentar match em todas as palavras da resposta (para respostas multi-palavra)
-        if raw_result.strip():
-            all_words = [normalize_text(re.sub(r'[^\w]', '', w)) for w in raw_result.strip().split()]
-            for valid in valid_names:
-                if valid in all_words:
-                    logger.info("LLM classify fallback match: '%s' found in words", valid)
-                    return valid
+        # Fallback: tentar match em todas as palavras da resposta
+        all_words = [normalize_text(re.sub(r'[^\w]', '', w)) for w in raw_result.strip().split()]
+        for valid in valid_names:
+            if valid in all_words:
+                logger.info("LLM classify fallback match: '%s' found in words", valid)
+                return valid
 
-        logger.warning("LLM classify: nenhum match para '%s', usando 'outro'", raw_result[:80])
-        return "outro"
+        return None
 
     def suggest_filename(self, text: str, doc_type: str) -> str:
         system = "Responde apenas com o nome do ficheiro. Sem explicações."
