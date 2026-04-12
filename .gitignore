@@ -44,3 +44,9 @@ build/
 # Environment
 .env
 *.pem
+
+# Dados pessoais e base de dados local
+data/
+
+# Claude Code worktrees
+.claude/worktrees/
