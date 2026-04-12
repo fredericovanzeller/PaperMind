@@ -1,14 +1,15 @@
 // PaperMindIOS/Views/StatusView.swift
-// PaperMind — Estado de sincronização com o Mac
+// PaperMind — Estado de sincronizacao com o Mac
 
 import SwiftUI
 
 struct StatusView: View {
     @ObservedObject var syncState: SyncState
+    @State private var refreshTimer: Timer?
 
     var body: some View {
         List {
-            Section("Sincronização") {
+            Section("Sincronizacao") {
                 HStack {
                     Label("Documentos indexados", systemImage: "doc.on.doc")
                     Spacer()
@@ -25,7 +26,7 @@ struct StatusView: View {
 
                 if let lastFile = syncState.lastProcessedFilename {
                     HStack {
-                        Label("Último processado", systemImage: "checkmark.circle")
+                        Label("Ultimo processado", systemImage: "checkmark.circle")
                         Spacer()
                         Text(lastFile)
                             .font(.caption)
@@ -40,19 +41,19 @@ struct StatusView: View {
                     icon: "camera.viewfinder",
                     color: .blue,
                     title: "1. Fotografa",
-                    subtitle: "Usa a câmara para digitalizar documentos"
+                    subtitle: "Usa a camara para digitalizar documentos"
                 )
                 InfoRow(
                     icon: "icloud.and.arrow.up",
                     color: .cyan,
                     title: "2. iCloud sincroniza",
-                    subtitle: "O documento é enviado automaticamente via iCloud"
+                    subtitle: "O documento e enviado automaticamente via iCloud"
                 )
                 InfoRow(
                     icon: "desktopcomputer",
                     color: .teal,
                     title: "3. Mac processa",
-                    subtitle: "OCR, classificação e indexação 100% offline"
+                    subtitle: "OCR, classificacao e indexacao 100% offline"
                 )
                 InfoRow(
                     icon: "magnifyingglass",
@@ -66,7 +67,7 @@ struct StatusView: View {
                 HStack {
                     Image(systemName: "lock.shield")
                         .foregroundStyle(.green)
-                    Text("Todos os dados ficam nos teus dispositivos. Nada na cloud de ninguém.")
+                    Text("Todos os dados ficam nos teus dispositivos. Nada na cloud de ninguem.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -76,6 +77,26 @@ struct StatusView: View {
         .refreshable {
             await syncState.refreshStatus()
         }
+        .onAppear {
+            startAutoRefresh()
+        }
+        .onDisappear {
+            stopAutoRefresh()
+        }
+    }
+
+    private func startAutoRefresh() {
+        // Initial fetch
+        Task { await syncState.refreshStatus() }
+        // Refresh every 30 seconds
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task { await syncState.refreshStatus() }
+        }
+    }
+
+    private func stopAutoRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 }
 

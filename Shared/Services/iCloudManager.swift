@@ -44,6 +44,14 @@ class iCloudManager: ObservableObject {
         )
     }
 
+    /// Lê status.json do iCloud (escrito pelo Mac)
+    func readStatusJSON() -> MacStatus? {
+        guard let base = baseURL else { return nil }
+        let statusURL = base.appendingPathComponent("status.json")
+        guard let data = try? Data(contentsOf: statusURL) else { return nil }
+        return try? JSONDecoder().decode(MacStatus.self, from: data)
+    }
+
     #if os(iOS)
     /// Guardar imagem digitalizada + texto OCR na Inbox
     func saveToInbox(imageData: Data, ocrText: String, format: String = "jpg") throws -> URL {

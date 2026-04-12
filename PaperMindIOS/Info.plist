@@ -21,9 +21,9 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
-	<string>PaperMind uses the camera to scan documents</string>
+	<string>PaperMind precisa da camara para digitalizar documentos</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>PaperMind can import documents from your photo library</string>
+	<string>PaperMind pode importar documentos da biblioteca de fotos</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

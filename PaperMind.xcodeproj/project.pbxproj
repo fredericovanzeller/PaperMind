@@ -27,6 +27,7 @@
 		D1064BE3B948BF9B1F420203 /* ContentViewIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CA7862E61E19307A3A3E4B3 /* ContentViewIOS.swift */; };
 		D31C5F188A2680F2E56FBE6E /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678F2825A80EBA145E7C2577 /* CameraView.swift */; };
 		E07F1A88BB39E4B6C83F6000 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10EBBA636924808AC66BE180 /* SidebarView.swift */; };
+		E4208249D52516EB8C077848 /* PaperMindIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5B69467BA2DCF58C06A21E /* PaperMindIOSApp.swift */; };
 		E6FA7BDD5E44B5435C0DF3DA /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1017007A7B793CEDCF93F3B /* StatusView.swift */; };
 		EA242AC8CD3DDCABEB532A02 /* PaperMindApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD072967194309652686399C /* PaperMindApp.swift */; };
 		EA642D3F90E99142EEA7D5C8 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A19FC4F9EEDE62E3E7398C /* InboxView.swift */; };
@@ -38,6 +39,7 @@
 		10EBBA636924808AC66BE180 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		1CA7862E61E19307A3A3E4B3 /* ContentViewIOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewIOS.swift; sourceTree = "<group>"; };
 		1CFDCBB3414F4DBD969996FD /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		3C5B69467BA2DCF58C06A21E /* PaperMindIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperMindIOSApp.swift; sourceTree = "<group>"; };
 		43D9E1060386F35E088A8FBD /* PaperMindMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperMindMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		44D7BDA60DCDDF311CD0A345 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		678F2825A80EBA145E7C2577 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
@@ -137,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				F6D05293A7F1D7DD7A967828 /* Info.plist */,
+				3C5B69467BA2DCF58C06A21E /* PaperMindIOSApp.swift */,
 				7D9E539001D396C7B3CACC20 /* Services */,
 				E4BF4BC295F679A9B33FD27B /* Views */,
 			);
@@ -256,6 +259,7 @@
 				D1064BE3B948BF9B1F420203 /* ContentViewIOS.swift in Sources */,
 				AEE65CB3AB982E5547C5A43D /* DocumentScanner.swift in Sources */,
 				EA642D3F90E99142EEA7D5C8 /* InboxView.swift in Sources */,
+				E4208249D52516EB8C077848 /* PaperMindIOSApp.swift in Sources */,
 				E6FA7BDD5E44B5435C0DF3DA /* StatusView.swift in Sources */,
 				138C1264A0F6D4F6B225B798 /* iCloudManager.swift in Sources */,
 				32D04968A212A240716FF04A /* iCloudSync.swift in Sources */,
@@ -291,6 +295,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = PaperMindIOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = PaperMindIOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -392,6 +397,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = PaperMindIOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = PaperMindIOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

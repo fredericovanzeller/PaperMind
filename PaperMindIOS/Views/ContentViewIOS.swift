@@ -1,4 +1,4 @@
-// PaperMindIOS/Views/ContentView.swift
+// PaperMindIOS/Views/ContentViewIOS.swift
 // PaperMind iOS — Interface principal com tabs
 
 import SwiftUI
@@ -6,24 +6,24 @@ import SwiftUI
 struct ContentViewIOS: View {
     @StateObject var syncState = SyncState()
     @State var showCamera = false
+    @State private var showScanSuccess = false
+    @State private var scanCount = 0
 
     var body: some View {
         TabView {
-            // Tab 1: Câmara
+            // Tab 1: Digitalizar
             NavigationStack {
                 VStack(spacing: 24) {
                     Spacer()
 
-                    Image("papermind-logo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 80, height: 80)
-                        .foregroundStyle(.tint)
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.teal)
 
                     Text("PaperMind")
                         .font(.largeTitle.bold())
 
-                    Text("Digitaliza documentos com a câmara.\nO Mac processa tudo automaticamente.")
+                    Text("Digitaliza documentos com a camara.\nO Mac processa tudo automaticamente.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -50,21 +50,26 @@ struct ContentViewIOS: View {
                             .padding()
                     }
 
+                    if showScanSuccess {
+                        Label(
+                            scanCount == 1
+                                ? "Documento enviado para o Mac"
+                                : "\(scanCount) paginas enviadas para o Mac",
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .foregroundStyle(.green)
+                        .font(.subheadline.bold())
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
                     Spacer()
                 }
-                .navigationTitle("Câmara")
+                .navigationTitle("Camara")
                 .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem { Label("Câmara", systemImage: "camera") }
+            .tabItem { Label("Camara", systemImage: "camera") }
 
-            // Tab 2: Inbox (aguarda sync)
-            NavigationStack {
-                InboxView(syncState: syncState)
-            }
-            .tabItem { Label("Inbox", systemImage: "tray") }
-            .badge(syncState.pendingCount)
-
-            // Tab 3: Estado da sincronização
+            // Tab 2: Estado
             NavigationStack {
                 StatusView(syncState: syncState)
             }
@@ -72,7 +77,17 @@ struct ContentViewIOS: View {
         }
         .sheet(isPresented: $showCamera) {
             CameraView { images in
-                Task { await syncState.processScans(images) }
+                scanCount = images.count
+                Task {
+                    await syncState.processScans(images)
+                    withAnimation {
+                        showScanSuccess = true
+                    }
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    withAnimation {
+                        showScanSuccess = false
+                    }
+                }
             }
         }
         .tint(.teal)

@@ -72,18 +72,4 @@ class SyncState: ObservableObject {
     }
 }
 
-// MARK: - Mac Status (lido do status.json no iCloud)
-
-struct MacStatus: Codable {
-    let lastProcessed: String
-    let totalDocuments: Int
-    let lastFilename: String
-    let pendingCount: Int
-
-    enum CodingKeys: String, CodingKey {
-        case lastProcessed = "last_processed"
-        case totalDocuments = "total_documents"
-        case lastFilename = "last_filename"
-        case pendingCount = "pending_count"
-    }
-}
+// MacStatus is defined in Shared/Models/AppModels.swift
