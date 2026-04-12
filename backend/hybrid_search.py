@@ -1,5 +1,9 @@
 """
 PaperMind — Hybrid Search (BM25 + semântica).
+
+v3.4:
+  - search() aceita List[Tuple[DocumentChunk, float]] do VectorStore
+  - Scoring mais robusto com normalização
 """
 
 from rank_bm25 import BM25Okapi
@@ -16,7 +20,7 @@ class HybridSearch:
 
     def build_index(self, chunks: List[DocumentChunk]):
         """Reconstrói o índice BM25 a partir de todos os chunks."""
-        self.corpus = list(chunks)  # cópia para evitar referência partilhada
+        self.corpus = list(chunks)
         tokenized = [chunk.text.lower().split() for chunk in self.corpus]
         if tokenized:
             self.bm25 = BM25Okapi(tokenized)
@@ -32,7 +36,7 @@ class HybridSearch:
         self,
         query: str,
         n_results: int = 5,
-        semantic_results: Optional[List[Tuple[str, float]]] = None,
+        semantic_results: Optional[List[Tuple[DocumentChunk, float]]] = None,
     ) -> List[DocumentChunk]:
         if not self.bm25 or not self.corpus:
             return []
@@ -45,7 +49,6 @@ class HybridSearch:
         scores_len = len(bm25_scores)
 
         if scores_len != corpus_len:
-            # Reconstruir índice se desalinhado
             self.build_index(self.corpus)
             bm25_scores = self.bm25.get_scores(query_tokens)
             scores_len = len(bm25_scores)
@@ -54,11 +57,17 @@ class HybridSearch:
         bm25_normalized = [s / max_bm25 for s in bm25_scores]
 
         if semantic_results:
-            semantic_map = {text: score for text, score in semantic_results}
+            # Build map from chunk key -> semantic score
+            semantic_map = {}
+            for chunk, score in semantic_results:
+                key = f"{chunk.source}_{chunk.chunk_index}"
+                semantic_map[key] = score
+
             final_scores = []
             for i in range(min(scores_len, corpus_len)):
                 bm25_score = bm25_normalized[i] if i < scores_len else 0.0
-                sem_score = semantic_map.get(self.corpus[i].text, 0.0)
+                chunk_key = f"{self.corpus[i].source}_{self.corpus[i].chunk_index}"
+                sem_score = semantic_map.get(chunk_key, 0.0)
                 final_scores.append(
                     self.keyword_weight * bm25_score
                     + self.semantic_weight * sem_score

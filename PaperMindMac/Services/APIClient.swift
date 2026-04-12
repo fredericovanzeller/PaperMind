@@ -18,9 +18,13 @@ class APIClient: ObservableObject {
     func checkHealth() async {
         guard let url = URL(string: "\(baseURL)/health") else { return }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try? JSONDecoder().decode([String: String].self, from: data) {
-                isBackendAvailable = json["status"] == "ok"
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               json["status"] as? String == "ok" {
+                isBackendAvailable = true
+            } else {
+                isBackendAvailable = false
             }
         } catch {
             isBackendAvailable = false
@@ -33,6 +37,7 @@ class APIClient: ObservableObject {
         let url = URL(string: "\(baseURL)/upload")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 300  // 5 min — OCR + embedding can be slow
 
         let boundary = UUID().uuidString
         request.setValue(
@@ -71,7 +76,7 @@ class APIClient: ObservableObject {
         return try JSONDecoder().decode(AskResponse.self, from: data)
     }
 
-    // MARK: - Ask with SSE Streaming
+    // MARK: - Ask with SSE Streaming (real async streaming)
 
     func askStreaming(
         question: String,
@@ -84,39 +89,41 @@ class APIClient: ObservableObject {
         ) ?? ""
         guard let url = URL(string: "\(baseURL)/ask/stream?question=\(encoded)") else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            guard let data = data,
-                  let text = String(data: data, encoding: .utf8)
-            else {
-                DispatchQueue.main.async { onComplete() }
-                return
-            }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 300
 
-            for line in text.components(separatedBy: "\n") {
-                guard line.hasPrefix("data: ") else { continue }
-                let json = String(line.dropFirst(6))
+        Task {
+            do {
+                let (bytes, _) = try await URLSession.shared.bytes(for: request)
 
-                if json == "[DONE]" {
-                    DispatchQueue.main.async { onComplete() }
-                    continue
-                }
+                for try await line in bytes.lines {
+                    guard line.hasPrefix("data: ") else { continue }
+                    let json = String(line.dropFirst(6))
 
-                if let eventData = json.data(using: .utf8),
-                   let event = try? JSONDecoder().decode(SSEEvent.self, from: eventData)
-                {
-                    DispatchQueue.main.async {
-                        switch event.type {
-                        case "token":
-                            onToken(event.content ?? "")
-                        case "sources":
-                            onSources(event.sources ?? [])
-                        default:
-                            break
+                    if json == "[DONE]" {
+                        await MainActor.run { onComplete() }
+                        break
+                    }
+
+                    if let eventData = json.data(using: .utf8),
+                       let event = try? JSONDecoder().decode(SSEEvent.self, from: eventData)
+                    {
+                        await MainActor.run {
+                            switch event.type {
+                            case "token":
+                                onToken(event.content ?? "")
+                            case "sources":
+                                onSources(event.sources ?? [])
+                            default:
+                                break
+                            }
                         }
                     }
                 }
+            } catch {
+                await MainActor.run { onComplete() }
             }
-        }.resume()
+        }
     }
 
     // MARK: - Sync Status
@@ -129,13 +136,19 @@ class APIClient: ObservableObject {
 
     // MARK: - Process Inbox
 
+    struct ProcessInboxResponse: Codable {
+        let processed: Int
+        let files: [String]
+    }
+
     func processInbox() async throws -> [String] {
         let url = URL(string: "\(baseURL)/sync/process-inbox")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 300  // OCR can be slow
         let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode([String: [String]].self, from: data)
-        return result["files"] ?? []
+        let result = try JSONDecoder().decode(ProcessInboxResponse.self, from: data)
+        return result.files
     }
 
     // MARK: - Model Management
@@ -166,6 +179,70 @@ class APIClient: ObservableObject {
         _ = try await URLSession.shared.data(for: request)
     }
 
+    // MARK: - Update Document Category
+
+    func updateCategory(filename: String, categoryName: String) async throws {
+        let encoded = filename.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? filename
+        let url = URL(string: "\(baseURL)/documents/\(encoded)/category")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = ["category": categoryName]
+        request.httpBody = try JSONEncoder().encode(body)
+        _ = try await URLSession.shared.data(for: request)
+    }
+
+    // MARK: - Categories Management
+
+    func getCategories() async throws -> [CategoryInfo] {
+        let url = URL(string: "\(baseURL)/categories")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let result = try JSONDecoder().decode([String: [CategoryInfo]].self, from: data)
+        return result["categories"] ?? []
+    }
+
+    func createCategory(name: String, displayName: String, description: String, icon: String, color: String) async throws -> CategoryInfo? {
+        let url = URL(string: "\(baseURL)/categories")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = [
+            "name": name,
+            "display_name": displayName,
+            "description": description,
+            "icon": icon,
+            "color": color,
+        ]
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try? JSONDecoder().decode(CategoryInfo.self, from: data)
+    }
+
+    func deleteCategory(name: String) async throws {
+        let url = URL(string: "\(baseURL)/categories/\(name)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        _ = try await URLSession.shared.data(for: request)
+    }
+
+    // MARK: - Reclassify All Documents
+
+    func reclassifyDocuments() async throws -> (total: Int, changed: Int) {
+        let url = URL(string: "\(baseURL)/documents/reclassify")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 600  // 10 min — reclassifying all can be slow
+        let (data, _) = try await URLSession.shared.data(for: request)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let total = json["total"] as? Int ?? 0
+            let changed = json["changed"] as? Int ?? 0
+            return (total, changed)
+        }
+        return (0, 0)
+    }
+
     // MARK: - Documents List
 
     func getDocuments() async throws -> [DocumentInfo] {
@@ -173,5 +250,49 @@ class APIClient: ObservableObject {
         let (data, _) = try await URLSession.shared.data(from: url)
         let result = try JSONDecoder().decode([String: [DocumentInfo]].self, from: data)
         return result["documents"] ?? []
+    }
+
+    // MARK: - Update Settings
+
+    func updateSettings(modelName: String, responseLanguage: String, autoOffMinutes: Int) async throws {
+        let url = URL(string: "\(baseURL)/settings")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "model_name": modelName,
+            "response_language": responseLanguage,
+            "auto_off_minutes": autoOffMinutes,
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        _ = try await URLSession.shared.data(for: request)
+    }
+
+    // MARK: - Reindex
+
+    func reindex() async throws -> (reindexed: Int, errors: [String], totalChunks: Int) {
+        let url = URL(string: "\(baseURL)/reindex")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 600
+        let (data, _) = try await URLSession.shared.data(for: request)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let reindexed = json["reindexed"] as? Int ?? 0
+            let errors = json["errors"] as? [String] ?? []
+            let totalChunks = json["total_chunks"] as? Int ?? 0
+            return (reindexed, errors, totalChunks)
+        }
+        return (0, [], 0)
+    }
+
+    // MARK: - Download PDF File
+
+    func getPDFData(filename: String) async throws -> Data {
+        let encoded = filename.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? filename
+        let url = URL(string: "\(baseURL)/documents/\(encoded)/file")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return data
     }
 }

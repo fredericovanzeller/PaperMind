@@ -7,31 +7,38 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1B2C3D4E5F60718A9B0C1D2 /* PaperMindApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99194A52F866749000C3789 /* PaperMindApp.swift */; };
+		0CAB8338BC38A98055481CBD /* CategoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 013BD167F4D2C4D20E80E13E /* CategoryManager.swift */; };
 		0EACEBF3DA286C1D2D78F0BA /* OCRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F63EC47972EA8520219C789C /* OCRService.swift */; };
 		138C1264A0F6D4F6B225B798 /* iCloudManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DD33450B816BBAA9C858A /* iCloudManager.swift */; };
 		16E10036AC04F994C6D36F7D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9036EB9A16C4F203391E071B /* ContentView.swift */; };
 		2073DD607FDDFF9C490CC437 /* iCloudManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DD33450B816BBAA9C858A /* iCloudManager.swift */; };
 		22357120F63103E08F204EA4 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC73DD41640C98CA080FBE5 /* APIClient.swift */; };
+		227812C4EC3E544A007411C8 /* OnboardingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABECDB80A9B642281FBF6A8 /* OnboardingManager.swift */; };
 		29D5B850AB057ED7C1A9D5E4 /* PDFKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4ACEEF905D196904D3746D1 /* PDFKitView.swift */; };
 		2DC29C3C7ADBCDEDE52908E1 /* InboxWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE432C0FDEF6D34F6536AB5 /* InboxWatcher.swift */; };
 		32D04968A212A240716FF04A /* iCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2D94A17ACD923C4898096F /* iCloudSync.swift */; };
 		71026890CBC5D9C89B7440FD /* AppModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9C0D183EA6510038A4D978E /* AppModels.swift */; };
+		7F0272A898947CE912AE05F3 /* BackendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10716C550C470C1E8528812 /* BackendManager.swift */; };
 		8914AB0DEB3C535BD51C94C2 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC20BBEC0DE42536200BDB2 /* ChatView.swift */; };
 		93ED12850C7E1273D4855330 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D7BDA60DCDDF311CD0A345 /* SettingsView.swift */; };
+		A2AD8B8CB9DF4207DD6B60AA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CFDCBB3414F4DBD969996FD /* OnboardingView.swift */; };
 		AEE65CB3AB982E5547C5A43D /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C860F81FE6F0778F7102D547 /* DocumentScanner.swift */; };
 		CD7B0842236B44627811B1A5 /* AppModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9C0D183EA6510038A4D978E /* AppModels.swift */; };
 		D1064BE3B948BF9B1F420203 /* ContentViewIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CA7862E61E19307A3A3E4B3 /* ContentViewIOS.swift */; };
 		D31C5F188A2680F2E56FBE6E /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678F2825A80EBA145E7C2577 /* CameraView.swift */; };
 		E07F1A88BB39E4B6C83F6000 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10EBBA636924808AC66BE180 /* SidebarView.swift */; };
 		E6FA7BDD5E44B5435C0DF3DA /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1017007A7B793CEDCF93F3B /* StatusView.swift */; };
+		EA242AC8CD3DDCABEB532A02 /* PaperMindApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD072967194309652686399C /* PaperMindApp.swift */; };
 		EA642D3F90E99142EEA7D5C8 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A19FC4F9EEDE62E3E7398C /* InboxView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		013BD167F4D2C4D20E80E13E /* CategoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryManager.swift; sourceTree = "<group>"; };
+		0ABECDB80A9B642281FBF6A8 /* OnboardingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingManager.swift; sourceTree = "<group>"; };
 		10EBBA636924808AC66BE180 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		1CA7862E61E19307A3A3E4B3 /* ContentViewIOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewIOS.swift; sourceTree = "<group>"; };
-		43D9E1060386F35E088A8FBD /* PaperMind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperMind.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1CFDCBB3414F4DBD969996FD /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		43D9E1060386F35E088A8FBD /* PaperMindMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperMindMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		44D7BDA60DCDDF311CD0A345 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		678F2825A80EBA145E7C2577 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
 		6AC20BBEC0DE42536200BDB2 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -41,15 +48,16 @@
 		87EDF6C8AB1727BCE102E9B4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8EC73DD41640C98CA080FBE5 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		9036EB9A16C4F203391E071B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		ADDB579B40DBF2ADD85810B3 /* PaperMind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperMind.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADDB579B40DBF2ADD85810B3 /* PaperMindIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaperMindIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1017007A7B793CEDCF93F3B /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
 		C860F81FE6F0778F7102D547 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScanner.swift; sourceTree = "<group>"; };
-		C99194A52F866749000C3789 /* PaperMindApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperMindApp.swift; sourceTree = "<group>"; };
 		DEE432C0FDEF6D34F6536AB5 /* InboxWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxWatcher.swift; sourceTree = "<group>"; };
+		E10716C550C470C1E8528812 /* BackendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendManager.swift; sourceTree = "<group>"; };
 		E9C0D183EA6510038A4D978E /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
 		F4ACEEF905D196904D3746D1 /* PDFKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFKitView.swift; sourceTree = "<group>"; };
 		F63EC47972EA8520219C789C /* OCRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRService.swift; sourceTree = "<group>"; };
 		F6D05293A7F1D7DD7A967828 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		FD072967194309652686399C /* PaperMindApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperMindApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -58,6 +66,7 @@
 			children = (
 				6AC20BBEC0DE42536200BDB2 /* ChatView.swift */,
 				9036EB9A16C4F203391E071B /* ContentView.swift */,
+				1CFDCBB3414F4DBD969996FD /* OnboardingView.swift */,
 				F4ACEEF905D196904D3746D1 /* PDFKitView.swift */,
 				44D7BDA60DCDDF311CD0A345 /* SettingsView.swift */,
 				10EBBA636924808AC66BE180 /* SidebarView.swift */,
@@ -68,8 +77,8 @@
 		152EBD4D604307B0EEF0B500 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				ADDB579B40DBF2ADD85810B3 /* PaperMind.app */,
-				43D9E1060386F35E088A8FBD /* PaperMind.app */,
+				ADDB579B40DBF2ADD85810B3 /* PaperMindIOS.app */,
+				43D9E1060386F35E088A8FBD /* PaperMindMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,8 +96,11 @@
 			isa = PBXGroup;
 			children = (
 				8EC73DD41640C98CA080FBE5 /* APIClient.swift */,
+				E10716C550C470C1E8528812 /* BackendManager.swift */,
+				013BD167F4D2C4D20E80E13E /* CategoryManager.swift */,
 				DEE432C0FDEF6D34F6536AB5 /* InboxWatcher.swift */,
 				F63EC47972EA8520219C789C /* OCRService.swift */,
+				0ABECDB80A9B642281FBF6A8 /* OnboardingManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -96,8 +108,8 @@
 		730A594A8B747CFC8F00E13A /* PaperMindMac */ = {
 			isa = PBXGroup;
 			children = (
-				C99194A52F866749000C3789 /* PaperMindApp.swift */,
 				87EDF6C8AB1727BCE102E9B4 /* Info.plist */,
+				FD072967194309652686399C /* PaperMindApp.swift */,
 				3F7F505014021D45A52AFD4D /* Services */,
 				0862BB8EA372B2615E3058B5 /* Views */,
 			);
@@ -177,7 +189,7 @@
 			packageProductDependencies = (
 			);
 			productName = PaperMindMac;
-			productReference = 43D9E1060386F35E088A8FBD /* PaperMind.app */;
+			productReference = 43D9E1060386F35E088A8FBD /* PaperMindMac.app */;
 			productType = "com.apple.product-type.application";
 		};
 		F66BEBC71F0470FC5CCE05BB /* PaperMindIOS */ = {
@@ -194,7 +206,7 @@
 			packageProductDependencies = (
 			);
 			productName = PaperMindIOS;
-			productReference = ADDB579B40DBF2ADD85810B3 /* PaperMind.app */;
+			productReference = ADDB579B40DBF2ADD85810B3 /* PaperMindIOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -204,7 +216,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					E0F6D950A141E7A7B3812C77 = {
 						DevelopmentTeam = "";
@@ -256,12 +268,16 @@
 			files = (
 				22357120F63103E08F204EA4 /* APIClient.swift in Sources */,
 				71026890CBC5D9C89B7440FD /* AppModels.swift in Sources */,
+				7F0272A898947CE912AE05F3 /* BackendManager.swift in Sources */,
+				0CAB8338BC38A98055481CBD /* CategoryManager.swift in Sources */,
 				8914AB0DEB3C535BD51C94C2 /* ChatView.swift in Sources */,
 				16E10036AC04F994C6D36F7D /* ContentView.swift in Sources */,
 				2DC29C3C7ADBCDEDE52908E1 /* InboxWatcher.swift in Sources */,
 				0EACEBF3DA286C1D2D78F0BA /* OCRService.swift in Sources */,
-				A1B2C3D4E5F60718A9B0C1D2 /* PaperMindApp.swift in Sources */,
+				227812C4EC3E544A007411C8 /* OnboardingManager.swift in Sources */,
+				A2AD8B8CB9DF4207DD6B60AA /* OnboardingView.swift in Sources */,
 				29D5B850AB057ED7C1A9D5E4 /* PDFKitView.swift in Sources */,
+				EA242AC8CD3DDCABEB532A02 /* PaperMindApp.swift in Sources */,
 				93ED12850C7E1273D4855330 /* SettingsView.swift in Sources */,
 				E07F1A88BB39E4B6C83F6000 /* SidebarView.swift in Sources */,
 				2073DD607FDDFF9C490CC437 /* iCloudManager.swift in Sources */,
@@ -295,7 +311,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PaperMind.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = PaperMindMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -343,12 +358,10 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -369,7 +382,6 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
@@ -428,12 +440,10 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -447,7 +457,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
@@ -460,7 +469,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PaperMind.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = PaperMindMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

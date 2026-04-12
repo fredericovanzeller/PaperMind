@@ -119,7 +119,9 @@ struct MessageBubble: View {
                 if message.role == .user { Spacer() }
 
                 Text(message.text)
-                    .padding(12)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                     .background(
                         message.role == .user
                             ? Color.accentColor.opacity(0.15)

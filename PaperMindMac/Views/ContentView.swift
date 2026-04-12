@@ -6,42 +6,64 @@ import UniformTypeIdentifiers
 import AppKit
 
 struct ContentView: View {
+    @EnvironmentObject var backendManager: BackendManager
     @StateObject private var api = APIClient()
+    @StateObject private var catManager = CategoryManager()
     @State private var selectedDocument: DocumentInfo?
-    @State private var pdfURL: URL?
+    @State private var pdfData: Data?
+    @State private var pdfDocName: String = ""
     @State private var currentPage: Int = 0
     @State private var messages: [ChatMessage] = []
     @State private var isBackendReady = false
     @State private var isDragging = false
+    @State private var refreshTrigger = UUID()
+    @State private var isUploading = false
+    @State private var uploadStatusMessage = ""
+    @State private var uploadedFileNames: [String] = []
+    @State private var uploadErrors: [String] = []
+    @State private var showUploadDone = false
+    @State private var showUploadError = false
 
     var body: some View {
         NavigationSplitView {
             // Painel esquerdo: documentos indexados
             SidebarView(
                 api: api,
+                categoryManager: catManager,
                 selectedDocument: $selectedDocument,
+                refreshTrigger: refreshTrigger,
                 onSelect: { doc in
                     currentPage = 0
-                    pdfURL = URL(fileURLWithPath: doc.filePath)
+                    Task {
+                        do {
+                            let data = try await api.getPDFData(filename: doc.filename)
+                            pdfData = data
+                            pdfDocName = doc.filename
+                        } catch {
+                            print("ERROR loading PDF: \(error)")
+                        }
+                    }
                 },
                 onDelete: { _ in
-                    pdfURL = nil
+                    pdfData = nil
+                    pdfDocName = ""
                     currentPage = 0
                 }
             )
         } content: {
             // Painel central: PDF viewer com deep linking
-            PDFKitView(url: pdfURL, currentPage: $currentPage)
-                .id(pdfURL)
-                .overlay {
-                    if pdfURL == nil {
-                        ContentUnavailableView(
-                            "Nenhum documento selecionado",
-                            systemImage: "doc.text",
-                            description: Text("Seleciona um documento na barra lateral")
-                        )
-                    }
+            Group {
+                if let data = pdfData {
+                    PDFKitView(pdfData: data, currentPage: $currentPage)
+                        .id(pdfDocName)
+                } else {
+                    ContentUnavailableView(
+                        "Nenhum documento selecionado",
+                        systemImage: "doc.text",
+                        description: Text("Seleciona um documento na barra lateral")
+                    )
                 }
+            }
         } detail: {
             // Painel direito: chat com o LLM
             ChatView(api: api, messages: $messages) { filename, page in
@@ -59,20 +81,36 @@ struct ContentView: View {
                 .help("Adicionar documento (⌘U)")
                 .keyboardShortcut("u", modifiers: .command)
             }
+            ToolbarItem(placement: .status) {
+                if !isBackendReady {
+                    HStack(spacing: 6) {
+                        if backendManager.isRunning {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("A iniciar backend...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                            Text("Backend offline")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
         // Drop zone para arrastar PDFs
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
-            print("DEBUG: drop received, \(providers.count) providers")
             for provider in providers {
-                print("DEBUG: provider types: \(provider.registeredTypeIdentifiers)")
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
-                    print("DEBUG: data=\(data?.count ?? -1) error=\(String(describing: error))")
                     guard let data = data,
                           let path = String(data: data, encoding: .utf8),
                           let url = URL(string: path.trimmingCharacters(in: .whitespacesAndNewlines))
                     else { return }
-                    print("DEBUG: uploading \(url)")
-                    Task { _ = try? await api.uploadFile(url) }
+                    Task { await uploadFiles([url]) }
                 }
             }
             return true
@@ -94,9 +132,48 @@ struct ContentView: View {
                     .padding()
             }
         }
+        // Upload progress overlay
+        .overlay {
+            if isUploading {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .overlay {
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .controlSize(.large)
+                            Text(uploadStatusMessage)
+                                .font(.headline)
+                            Text("Isto pode demorar alguns segundos...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(32)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    }
+            }
+        }
+        .alert("Upload concluído", isPresented: $showUploadDone) {
+            Button("OK") { }
+        } message: {
+            if uploadedFileNames.count == 1 {
+                Text("\"\(uploadedFileNames.first ?? "")\" foi indexado com sucesso.")
+            } else {
+                Text("\(uploadedFileNames.count) documentos indexados com sucesso.")
+            }
+        }
+        .alert("Erro no upload", isPresented: $showUploadError) {
+            Button("OK") { }
+        } message: {
+            Text(uploadErrors.joined(separator: "\n"))
+        }
         .task {
-            await api.checkHealth()
-            isBackendReady = api.isBackendAvailable
+            // Fast poll (1s) until backend responds, then slow poll (30s) to detect disconnects
+            while !Task.isCancelled {
+                await api.checkHealth()
+                isBackendReady = api.isBackendAvailable
+                let interval: UInt64 = isBackendReady ? 30_000_000_000 : 1_000_000_000
+                try? await Task.sleep(nanoseconds: interval)
+            }
         }
     }
 
@@ -110,8 +187,52 @@ struct ContentView: View {
 
         guard panel.runModal() == .OK else { return }
 
-        for url in panel.urls {
-            Task { _ = try? await api.uploadFile(url) }
+        Task { await uploadFiles(panel.urls) }
+    }
+
+    private func uploadFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+
+        await MainActor.run {
+            isUploading = true
+            uploadedFileNames = []
+            uploadErrors = []
+            uploadStatusMessage = urls.count == 1
+                ? "A indexar \(urls.first!.lastPathComponent)..."
+                : "A indexar \(urls.count) documentos..."
+        }
+
+        for (index, url) in urls.enumerated() {
+            await MainActor.run {
+                if urls.count > 1 {
+                    uploadStatusMessage = "A indexar \(index + 1) de \(urls.count): \(url.lastPathComponent)..."
+                }
+            }
+            do {
+                let result = try await api.uploadFile(url)
+                if result.status == "success" {
+                    await MainActor.run { uploadedFileNames.append(result.filename) }
+                } else {
+                    let errorMsg = result.error ?? "Erro desconhecido"
+                    await MainActor.run { uploadErrors.append("\(url.lastPathComponent): \(errorMsg)") }
+                }
+            } catch {
+                await MainActor.run { uploadErrors.append("\(url.lastPathComponent): \(error.localizedDescription)") }
+            }
+        }
+
+        // Brief pause for backend to finalize indexing
+        await MainActor.run { uploadStatusMessage = "A finalizar..." }
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+        await MainActor.run {
+            isUploading = false
+            refreshTrigger = UUID()
+            if !uploadedFileNames.isEmpty {
+                showUploadDone = true
+            } else if !uploadErrors.isEmpty {
+                showUploadError = true
+            }
         }
     }
 }

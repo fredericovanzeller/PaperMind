@@ -2,6 +2,7 @@
 // PaperMind — Modelos partilhados Mac + iOS
 
 import Foundation
+import SwiftUI
 
 // MARK: - API Response Models
 
@@ -66,6 +67,10 @@ struct DocumentInfo: Codable, Identifiable, Hashable {
     let dateAdded: String
     let filePath: String
 
+    func category(from categories: [CategoryInfo]) -> CategoryInfo {
+        categories.first { $0.name == documentType.lowercased() } ?? CategoryInfo.fallback
+    }
+
     enum CodingKeys: String, CodingKey {
         case filename
         case totalChunks = "total_chunks"
@@ -73,6 +78,55 @@ struct DocumentInfo: Codable, Identifiable, Hashable {
         case dateAdded = "date_added"
         case filePath = "file_path"
     }
+}
+
+// MARK: - Category Info (dynamic — built-in + custom)
+
+struct CategoryInfo: Codable, Identifiable, Hashable {
+    let name: String
+    let displayName: String
+    let description: String
+    let icon: String
+    let color: String
+    let isBuiltIn: Bool
+
+    var id: String { name }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case displayName = "display_name"
+        case description, icon, color
+        case isBuiltIn = "is_built_in"
+    }
+
+    var swiftColor: Color {
+        switch color {
+        case "red": return .red
+        case "green": return .green
+        case "blue": return .blue
+        case "orange": return .orange
+        case "purple": return .purple
+        case "pink": return .pink
+        case "yellow": return .yellow
+        case "teal": return .teal
+        case "indigo": return .indigo
+        case "brown": return .brown
+        case "mint": return .mint
+        case "cyan": return .cyan
+        default: return .gray
+        }
+    }
+
+    // Built-in defaults for offline use
+    static let builtInCategories: [CategoryInfo] = [
+        CategoryInfo(name: "medico", displayName: "Médico / Saúde", description: "", icon: "cross.case.fill", color: "red", isBuiltIn: true),
+        CategoryInfo(name: "financeiro", displayName: "Financeiro / Fiscal", description: "", icon: "eurosign.circle.fill", color: "green", isBuiltIn: true),
+        CategoryInfo(name: "legal", displayName: "Legal / Contratos", description: "", icon: "doc.text.fill", color: "blue", isBuiltIn: true),
+        CategoryInfo(name: "pessoal", displayName: "Pessoal / ID", description: "", icon: "person.text.rectangle.fill", color: "orange", isBuiltIn: true),
+        CategoryInfo(name: "outro", displayName: "Outro", description: "", icon: "doc.fill", color: "gray", isBuiltIn: true),
+    ]
+
+    static let fallback = CategoryInfo(name: "outro", displayName: "Outro", description: "", icon: "doc.fill", color: "gray", isBuiltIn: true)
 }
 
 // MARK: - SSE Event Parsing

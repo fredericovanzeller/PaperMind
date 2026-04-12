@@ -13,7 +13,7 @@ from typing import Callable, Set
 
 logger = logging.getLogger("papermind.inbox_watcher")
 
-SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".heic"}
+SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".docx", ".txt", ".md"}
 
 
 class InboxWatcher:

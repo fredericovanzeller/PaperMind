@@ -132,12 +132,12 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
             continue
 
         words = text.split()
-        chunk_size = 400
-        overlap = 50
+        chunk_size = 200
+        overlap = 80
 
         for i in range(0, len(words), chunk_size - overlap):
             chunk_text = " ".join(words[i:i + chunk_size])
-            if len(chunk_text) > 50:
+            if len(chunk_text) > 30:
                 chunks.append(DocumentChunk(
                     text=chunk_text,
                     source=filename,
@@ -149,16 +149,16 @@ def process_pdf(filepath: str) -> List[DocumentChunk]:
     return chunks
 
 
-def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
-    """Para imagens já com OCR feito pelo iPhone."""
+def process_plain_text(text: str, filename: str) -> List[DocumentChunk]:
+    """Chunka texto plano em DocumentChunks."""
     words = text.split()
     chunks = []
-    chunk_size = 400
-    overlap = 50
+    chunk_size = 200
+    overlap = 80
 
     for i, idx in enumerate(range(0, len(words), chunk_size - overlap)):
         chunk_text = " ".join(words[idx:idx + chunk_size])
-        if len(chunk_text) > 50:
+        if len(chunk_text) > 30:
             chunks.append(DocumentChunk(
                 text=chunk_text,
                 source=filename,
@@ -167,3 +167,36 @@ def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
             ))
 
     return chunks
+
+
+def process_image_text(text: str, filename: str) -> List[DocumentChunk]:
+    """Para imagens já com OCR feito pelo iPhone."""
+    return process_plain_text(text, filename)
+
+
+def process_docx(filepath: str) -> List[DocumentChunk]:
+    """Extrai texto de ficheiros .docx (Word)."""
+    try:
+        from docx import Document
+        doc = Document(filepath)
+        filename = Path(filepath).name
+        full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        if not full_text.strip():
+            return []
+        return process_plain_text(full_text, filename)
+    except Exception as e:
+        logger.warning("Erro ao processar DOCX %s: %s", filepath, e)
+        return []
+
+
+def process_txt(filepath: str) -> List[DocumentChunk]:
+    """Extrai texto de ficheiros .txt e .md."""
+    try:
+        filename = Path(filepath).name
+        text = Path(filepath).read_text(encoding="utf-8", errors="ignore")
+        if not text.strip():
+            return []
+        return process_plain_text(text, filename)
+    except Exception as e:
+        logger.warning("Erro ao processar TXT %s: %s", filepath, e)
+        return []
